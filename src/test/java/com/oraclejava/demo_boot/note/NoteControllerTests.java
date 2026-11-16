@@ -11,79 +11,97 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+/** 실제 JPA 계층(H2, MySQL 호환 모드)까지 포함한 노트 API 통합 테스트. */
+@SpringBootTest
 class NoteControllerTests {
+
+	@Autowired
+	private NoteController noteController;
+
+	@Autowired
+	private NoteRepository noteRepository;
 
 	private MockMvc mvc;
 
 	@BeforeEach
 	void setUp() {
-		mvc = MockMvcBuilders.standaloneSetup(new NoteController(new NoteService())).build();
+		noteRepository.deleteAll();
+		mvc = MockMvcBuilders.standaloneSetup(noteController).build();
+	}
+
+	/** 노트를 생성하고 Location 헤더에서 경로(/api/notes/{id})를 돌려준다. */
+	private String createNote(String json) throws Exception {
+		return mvc.perform(post("/api/notes").contentType(MediaType.APPLICATION_JSON).content(json))
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getHeader("Location");
 	}
 
 	@Test
 	void crudLifecycle() throws Exception {
-		mvc.perform(post("/api/notes").contentType(MediaType.APPLICATION_JSON)
+		String location = mvc.perform(post("/api/notes").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"title\":\"첫 노트\",\"content\":\"내용\"}"))
 				.andExpect(status().isCreated())
-				.andExpect(header().string("Location", "/api/notes/1"))
-				.andExpect(jsonPath("$.id").value(1))
-				.andExpect(jsonPath("$.title").value("첫 노트"));
+				.andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/notes/[0-9]+")))
+				.andExpect(jsonPath("$.id").isNumber())
+				.andExpect(jsonPath("$.title").value("첫 노트"))
+				.andExpect(jsonPath("$.createdAt").exists())
+				.andReturn().getResponse().getHeader("Location");
 
 		mvc.perform(get("/api/notes"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1));
 
-		mvc.perform(get("/api/notes/1"))
+		mvc.perform(get(location))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.content").value("내용"));
 
-		mvc.perform(put("/api/notes/1").contentType(MediaType.APPLICATION_JSON)
+		mvc.perform(put(location).contentType(MediaType.APPLICATION_JSON)
 						.content("{\"title\":\"수정됨\",\"content\":\"새 내용\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.title").value("수정됨"));
 
-		mvc.perform(delete("/api/notes/1")).andExpect(status().isNoContent());
-		mvc.perform(get("/api/notes/1")).andExpect(status().isNotFound());
+		mvc.perform(delete(location)).andExpect(status().isNoContent());
+		mvc.perform(get(location)).andExpect(status().isNotFound());
 	}
 
 	@Test
 	void patchUpdatesOnlyGivenFields() throws Exception {
-		mvc.perform(post("/api/notes").contentType(MediaType.APPLICATION_JSON)
-						.content("{\"title\":\"원래 제목\",\"content\":\"원래 내용\"}"))
-				.andExpect(status().isCreated());
+		String location = createNote("{\"title\":\"원래 제목\",\"content\":\"원래 내용\"}");
 
-		mvc.perform(patch("/api/notes/1").contentType(MediaType.APPLICATION_JSON)
+		mvc.perform(patch(location).contentType(MediaType.APPLICATION_JSON)
 						.content("{\"content\":\"바뀐 내용\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.title").value("원래 제목"))
 				.andExpect(jsonPath("$.content").value("바뀐 내용"));
 
-		mvc.perform(patch("/api/notes/1").contentType(MediaType.APPLICATION_JSON)
+		mvc.perform(patch(location).contentType(MediaType.APPLICATION_JSON)
 						.content("{\"title\":\"바뀐 제목\"}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.title").value("바뀐 제목"))
 				.andExpect(jsonPath("$.content").value("바뀐 내용"));
 
-		mvc.perform(patch("/api/notes/1").contentType(MediaType.APPLICATION_JSON)
+		mvc.perform(patch(location).contentType(MediaType.APPLICATION_JSON)
 						.content("{\"title\":\" \"}"))
 				.andExpect(status().isBadRequest());
 
-		mvc.perform(patch("/api/notes/99").contentType(MediaType.APPLICATION_JSON)
+		mvc.perform(patch("/api/notes/999999").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"title\":\"x\"}"))
 				.andExpect(status().isNotFound());
 	}
 
 	@Test
 	void missingNoteReturns404() throws Exception {
-		mvc.perform(get("/api/notes/99")).andExpect(status().isNotFound());
-		mvc.perform(put("/api/notes/99").contentType(MediaType.APPLICATION_JSON)
+		mvc.perform(get("/api/notes/999999")).andExpect(status().isNotFound());
+		mvc.perform(put("/api/notes/999999").contentType(MediaType.APPLICATION_JSON)
 						.content("{\"title\":\"x\"}"))
 				.andExpect(status().isNotFound());
-		mvc.perform(delete("/api/notes/99")).andExpect(status().isNotFound());
+		mvc.perform(delete("/api/notes/999999")).andExpect(status().isNotFound());
 	}
 
 	@Test

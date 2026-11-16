@@ -1,56 +1,66 @@
 package com.oraclejava.demo_boot.note;
 
-import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-/** 인메모리 노트 저장소. 애플리케이션 재시작 시 데이터는 사라진다. */
+/** Spring Data JPA 기반 노트 서비스. 데이터는 MySQL notes 테이블에 저장된다. */
 @Service
+@Transactional(readOnly = true)
 public class NoteService {
 
-	private final Map<Long, Note> notes = new ConcurrentHashMap<>();
-	private final AtomicLong sequence = new AtomicLong();
+	private final NoteRepository noteRepository;
+
+	public NoteService(NoteRepository noteRepository) {
+		this.noteRepository = noteRepository;
+	}
 
 	public List<Note> findAll() {
-		return notes.values().stream()
-				.sorted(Comparator.comparing(Note::id))
+		return noteRepository.findAllByOrderByIdAsc().stream()
+				.map(NoteEntity::toNote)
 				.toList();
 	}
 
 	public Optional<Note> findById(Long id) {
-		return Optional.ofNullable(notes.get(id));
+		return noteRepository.findById(id).map(NoteEntity::toNote);
 	}
 
+	@Transactional
 	public Note create(NoteRequest request) {
-		Long id = sequence.incrementAndGet();
-		Instant now = Instant.now();
-		Note note = new Note(id, request.title(), request.content(), now, now);
-		notes.put(id, note);
-		return note;
+		return noteRepository.saveAndFlush(new NoteEntity(request.title(), request.content())).toNote();
 	}
 
+	@Transactional
 	public Optional<Note> update(Long id, NoteRequest request) {
-		return Optional.ofNullable(notes.computeIfPresent(id, (key, existing) ->
-				new Note(key, request.title(), request.content(), existing.createdAt(), Instant.now())));
+		return noteRepository.findById(id).map(entity -> {
+			entity.changeTitle(request.title());
+			entity.changeContent(request.content());
+			return noteRepository.saveAndFlush(entity).toNote();
+		});
 	}
 
 	/** 요청에서 null이 아닌 필드만 반영한다. */
+	@Transactional
 	public Optional<Note> patch(Long id, NoteRequest request) {
-		return Optional.ofNullable(notes.computeIfPresent(id, (key, existing) -> new Note(
-				key,
-				request.title() != null ? request.title() : existing.title(),
-				request.content() != null ? request.content() : existing.content(),
-				existing.createdAt(),
-				Instant.now())));
+		return noteRepository.findById(id).map(entity -> {
+			if (request.title() != null) {
+				entity.changeTitle(request.title());
+			}
+			if (request.content() != null) {
+				entity.changeContent(request.content());
+			}
+			return noteRepository.saveAndFlush(entity).toNote();
+		});
 	}
 
+	@Transactional
 	public boolean delete(Long id) {
-		return notes.remove(id) != null;
+		if (!noteRepository.existsById(id)) {
+			return false;
+		}
+		noteRepository.deleteById(id);
+		return true;
 	}
 }
