@@ -10,9 +10,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
-/** board 테이블에 매핑되는 JPA 엔티티. API 응답은 {@link Board} 레코드로 변환해 반환한다. */
+/** board2 테이블에 매핑되는 JPA 엔티티. API 응답은 {@link Board} 레코드로 변환해 반환한다. */
 @Entity
-@Table(name = "board")
+@Table(name = "board2")
 public class BoardEntity {
 
 	/** 글 번호 */
