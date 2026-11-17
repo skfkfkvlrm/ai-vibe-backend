@@ -2,6 +2,8 @@ package com.oraclejava.pc_mall.product;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -10,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +50,44 @@ class ProductApiTests {
 		mvc.perform(multipart(HttpMethod.PUT, "/api/products/" + id).param("name", "B").param("price", "2")
 				.param("kind", "laptop")).andExpect(status().isOk()).andExpect(jsonPath("$.name").value("B"))
 				.andExpect(jsonPath("$.hasPicL").value(true));
+	}
+
+	private static String json(String extra) {
+		return "{\"name\":\"JsonBook\",\"price\":1000,\"kind\":\"laptop\"" + extra + "}";
+	}
+
+	private static String b64() {
+		return java.util.Base64.getEncoder().encodeToString(PNG);
+	}
+
+	@Test
+	void jsonCreateStoresBase64ImageAsBinary() throws Exception {
+		String body = mvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON)
+				.content(json(",\"pic_s\":\"data:image/png;base64," + b64() + "\"")))
+				.andExpect(status().isCreated()).andExpect(jsonPath("$.hasPicS").value(true))
+				.andReturn().getResponse().getContentAsString();
+		String id = body.replaceAll(".*\"id\":(\\d+).*", "$1");
+
+		byte[] stored = mvc.perform(get("/api/products/" + id + "/pic-s")).andExpect(status().isOk()).andReturn()
+				.getResponse().getContentAsByteArray();
+		org.junit.jupiter.api.Assertions.assertArrayEquals(PNG, stored);
+	}
+
+	@Test
+	void jsonUpdateWithoutImagesKeepsExistingPics() throws Exception {
+		String body = mvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON)
+				.content(json(",\"pic_l\":\"" + b64() + "\""))).andReturn().getResponse().getContentAsString();
+		String id = body.replaceAll(".*\"id\":(\\d+).*", "$1");
+
+		mvc.perform(put("/api/products/" + id).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"name\":\"Renamed\",\"price\":2,\"kind\":\"laptop\"}")).andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("Renamed")).andExpect(jsonPath("$.hasPicL").value(true));
+	}
+
+	@Test
+	void jsonInvalidBase64Returns400() throws Exception {
+		mvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON)
+				.content(json(",\"pic_s\":\"@@not-base64@@\""))).andExpect(status().isBadRequest());
 	}
 
 	@Test

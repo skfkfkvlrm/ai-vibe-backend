@@ -1,6 +1,9 @@
 package com.oraclejava.pc_mall.product;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.URLConnection;
+import java.util.Base64;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
@@ -18,11 +21,20 @@ public class ProductService {
 		this.repository = repository;
 	}
 
-	@Transactional
 	public ProductResponse create(String name, int price, String kind, String text,
 			MultipartFile picS, MultipartFile picL) {
+		return create(name, price, kind, text, toBytes(picS), toBytes(picL));
+	}
+
+	public ProductResponse create(ProductRequest req) {
+		return create(req.name(), req.price(), req.kind(), req.text(), decode(req.picS()), decode(req.picL()));
+	}
+
+	@Transactional
+	public ProductResponse create(String name, int price, String kind, String text, byte[] picS, byte[] picL) {
+		requireFields(name, kind);
 		Product product = new Product(name, price, kind, text);
-		product.changePics(toBytes(picS), toBytes(picL));
+		product.changePics(picS, picL);
 		return ProductResponse.from(repository.save(product));
 	}
 
@@ -46,12 +58,22 @@ public class ProductService {
 		return requirePic(get(id).getPicL());
 	}
 
-	@Transactional
 	public ProductResponse update(Long id, String name, int price, String kind, String text,
 			MultipartFile picS, MultipartFile picL) {
+		return update(id, name, price, kind, text, toBytes(picS), toBytes(picL));
+	}
+
+	public ProductResponse update(Long id, ProductRequest req) {
+		return update(id, req.name(), req.price(), req.kind(), req.text(), decode(req.picS()), decode(req.picL()));
+	}
+
+	@Transactional
+	public ProductResponse update(Long id, String name, int price, String kind, String text, byte[] picS,
+			byte[] picL) {
+		requireFields(name, kind);
 		Product product = get(id);
 		product.update(name, price, kind, text);
-		product.changePics(toBytes(picS), toBytes(picL));
+		product.changePics(picS, picL);
 		return ProductResponse.from(product);
 	}
 
@@ -70,6 +92,35 @@ public class ProductService {
 			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "이미지가 없습니다");
 		}
 		return pic;
+	}
+
+	private void requireFields(String name, String kind) {
+		if (name == null || name.isBlank() || kind == null || kind.isBlank()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "name, kind는 필수입니다");
+		}
+	}
+
+	private byte[] decode(String base64) {
+		if (base64 == null || base64.isBlank()) {
+			return null;
+		}
+		String data = base64.startsWith("data:") ? base64.substring(base64.indexOf(',') + 1) : base64;
+		byte[] bytes;
+		try {
+			bytes = Base64.getMimeDecoder().decode(data.trim());
+		} catch (IllegalArgumentException e) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "올바른 Base64 형식이 아닙니다");
+		}
+		String type = null;
+		try {
+			type = URLConnection.guessContentTypeFromStream(new ByteArrayInputStream(bytes));
+		} catch (IOException ignored) {
+			// 판별 실패는 아래에서 400 처리
+		}
+		if (type == null || !type.startsWith("image/")) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "이미지 데이터가 아닙니다 (PNG/JPEG/GIF/BMP만 지원)");
+		}
+		return bytes;
 	}
 
 	private byte[] toBytes(MultipartFile file) {
