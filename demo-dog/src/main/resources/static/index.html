@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>개 쇼핑몰</title>
+<style>
+	body { font-family: sans-serif; margin: 0; padding: 24px; background: #fff; color: #000; }
+	h1 { text-align: center; margin: 0 0 16px; }
+	/* 3열 그리드, 3행 높이로 고정하고 넘치면 상하 스크롤 */
+	#list {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 20px;
+		width: 960px;
+		max-width: 100%;
+		height: 1000px;
+		max-height: 80vh;
+		margin: 0 auto;
+		padding: 12px;
+		overflow-y: auto;
+		box-sizing: border-box;
+		align-content: start;
+	}
+	.card { border: 3px solid #000; padding: 12px; box-sizing: border-box; }
+	.card img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 3px solid #000; box-sizing: border-box; }
+	.card ul { list-style: none; margin: 12px 0 0; padding: 0 0 0 12px; line-height: 1.7; }
+	.msg { grid-column: 1 / -1; text-align: center; padding: 40px 0; }
+</style>
+</head>
+<body>
+<h1>개 쇼핑몰</h1>
+<div id="list"></div>
+<script>
+	const list = document.getElementById('list');
+
+	function show(text) {
+		const p = document.createElement('p');
+		p.className = 'msg';
+		p.textContent = text;
+		list.replaceChildren(p);
+	}
+
+	// DB 값이 'jindo.jpg' 또는 '/static/jindo.jpg' 여도 '/jindo.jpg'로 맞춘다.
+	function imageUrl(image) {
+		if (!image) return '';
+		return '/' + image.replace(/^\/?(static\/)?/, '');
+	}
+
+	function line(label, value, unit) {
+		const li = document.createElement('li');
+		const v = (value === null || value === undefined || value === '') ? '-' : value + (unit || '');
+		li.textContent = label + ': ' + v;
+		return li;
+	}
+
+	function card(dog) {
+		const div = document.createElement('div');
+		div.className = 'card';
+
+		const img = document.createElement('img');
+		img.src = imageUrl(dog.image);
+		img.alt = dog.kind || '';
+		div.appendChild(img);
+
+		const ul = document.createElement('ul');
+		const name = document.createElement('li');
+		name.textContent = dog.kind || '-';
+		name.style.fontWeight = 'bold';
+		ul.appendChild(name);
+		ul.appendChild(line('키', dog.height, 'cm'));
+		ul.appendChild(line('몸무게', dog.weight, 'kg'));
+		ul.appendChild(line('원산지', dog.country));
+		ul.appendChild(line('관련 내용', dog.content));
+		div.appendChild(ul);
+		return div;
+	}
+
+	fetch('/api/dogs')
+		.then(res => {
+			if (!res.ok) throw new Error('HTTP ' + res.status);
+			return res.json();
+		})
+		.then(dogs => {
+			if (!dogs.length) { show('등록된 개가 없습니다.'); return; }
+			list.replaceChildren(...dogs.map(card));
+		})
+		.catch(() => show('목록을 불러오지 못했습니다.'));
+</script>
+</body>
+</html>
