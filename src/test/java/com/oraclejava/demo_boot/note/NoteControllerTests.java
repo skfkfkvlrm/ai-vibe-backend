@@ -96,6 +96,17 @@ class NoteControllerTests {
 	}
 
 	@Test
+	void listReturnsNewestFirst() throws Exception {
+		createNote("{\"title\":\"먼저\",\"content\":\"1\"}");
+		createNote("{\"title\":\"나중\",\"content\":\"2\"}");
+
+		mvc.perform(get("/api/notes"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].title").value("나중"))
+				.andExpect(jsonPath("$[1].title").value("먼저"));
+	}
+
+	@Test
 	void missingNoteReturns404() throws Exception {
 		mvc.perform(get("/api/notes/999999")).andExpect(status().isNotFound());
 		mvc.perform(put("/api/notes/999999").contentType(MediaType.APPLICATION_JSON)
