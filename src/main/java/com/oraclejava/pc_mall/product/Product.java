@@ -32,12 +32,12 @@ public class Product {
 
 	@Lob
 	@Basic(fetch = FetchType.LAZY)
-	@Column(name = "pic_s", columnDefinition = "LONGBLOB")
+	@Column(name = "pic_s", columnDefinition = "MEDIUMBLOB")
 	private byte[] picS;
 
 	@Lob
 	@Basic(fetch = FetchType.LAZY)
-	@Column(name = "pic_l", columnDefinition = "LONGBLOB")
+	@Column(name = "pic_l", columnDefinition = "MEDIUMBLOB")
 	private byte[] picL;
 
 	protected Product() {
