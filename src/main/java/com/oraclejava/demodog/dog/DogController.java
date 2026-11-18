@@ -67,7 +67,7 @@ public class DogController {
 		return ResponseEntity.noContent().build();
 	}
 
-	private static void validate(DogRequest request) {
+	static void validate(DogRequest request) {
 		if (request == null || request.kind() == null || request.kind().isBlank()) {
 			throw badRequest("kind is required");
 		}
