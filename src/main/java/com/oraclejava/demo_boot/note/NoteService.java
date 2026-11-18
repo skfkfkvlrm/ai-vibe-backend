@@ -18,7 +18,7 @@ public class NoteService {
 	}
 
 	public List<Note> findAll() {
-		return noteRepository.findAllByOrderByCreatedAtDescIdDesc().stream()
+		return noteRepository.findAllByOrderByUpdatedAtDescIdDesc().stream()
 				.map(NoteEntity::toNote)
 				.toList();
 	}
