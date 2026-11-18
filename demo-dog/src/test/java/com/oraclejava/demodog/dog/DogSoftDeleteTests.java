@@ -34,6 +34,9 @@ class DogSoftDeleteTests {
 	private DogRestoreController restoreController;
 
 	@Autowired
+	private DogDeletedController deletedController;
+
+	@Autowired
 	private DogService dogService;
 
 	@Autowired
@@ -48,7 +51,8 @@ class DogSoftDeleteTests {
 	@BeforeEach
 	void setUp() {
 		dogRepository.deleteAll();
-		mvc = MockMvcBuilders.standaloneSetup(dogController, updateController, deleteController, restoreController)
+		mvc = MockMvcBuilders.standaloneSetup(dogController, updateController, deleteController, restoreController,
+				deletedController)
 				.build();
 		id = dogService.create(new DogRequest("진돗개", 500000, "jindo.jpg", "대한민국", 50.5, 18.2, "설명")).id();
 	}
@@ -101,6 +105,35 @@ class DogSoftDeleteTests {
 
 		Assertions.assertEquals(0, deletedRows(id));
 		Assertions.assertTrue(dogService.findAll().stream().anyMatch(d -> d.id() == id));
+	}
+
+	@Test
+	void deletedListShowsOnlyDeletedDogsAndDropsRestoredOnes() throws Exception {
+		long other = dogService.create(new DogRequest("말티즈", 300000, null, null, null, null, null)).id();
+		dogService.delete(id);
+
+		mvc.perform(get("/api/deleted"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.id==" + id + ")].kind").value("진돗개"))
+				.andExpect(jsonPath("$[?(@.id==" + id + ")].price").value(500000))
+				.andExpect(jsonPath("$[?(@.id==" + id + ")].deletedAt").isNotEmpty())
+				.andExpect(jsonPath("$[?(@.id==" + other + ")]").isEmpty());
+
+		mvc.perform(post("/api/restore/" + id)).andExpect(status().isOk());
+
+		mvc.perform(get("/api/deleted"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.id==" + id + ")]").isEmpty());
+	}
+
+	@Test
+	void deletedListIsOrderedByMostRecentlyDeletedFirst() {
+		long second = dogService.create(new DogRequest("말티즈", 300000, null, null, null, null, null)).id();
+		jdbc.update("update dogs set deleted_at = ? where id = ?", java.sql.Timestamp.valueOf("2020-01-01 00:00:00"), id);
+		jdbc.update("update dogs set deleted_at = ? where id = ?", java.sql.Timestamp.valueOf("2020-01-02 00:00:00"), second);
+
+		var ids = dogService.findDeleted().stream().map(DeletedDog::id).toList();
+		Assertions.assertTrue(ids.indexOf(second) < ids.indexOf(id), "최근 삭제한 개가 먼저 와야 한다");
 	}
 
 	@Test

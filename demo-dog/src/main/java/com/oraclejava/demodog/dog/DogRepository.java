@@ -21,4 +21,9 @@ public interface DogRepository extends JpaRepository<DogEntity, Long> {
 	@Query(value = "update dogs set deleted_at = null where id = :id and deleted_at is not null",
 			nativeQuery = true)
 	int restore(@Param("id") Long id);
+
+	/** soft delete된 행만 최근 삭제 순으로 읽는다. 엔티티 필터가 삭제 행을 숨기므로 네이티브 쿼리를 쓴다. */
+	@Query(value = "select id as id, kind as kind, price as price, image as image, deleted_at as deletedAt "
+			+ "from dogs where deleted_at is not null order by deleted_at desc, id desc", nativeQuery = true)
+	List<DeletedDogRow> findDeleted();
 }

@@ -23,6 +23,13 @@ public class DogService {
 				.toList();
 	}
 
+	/** soft delete된 개를 최근 삭제 순으로 반환한다. */
+	public List<DeletedDog> findDeleted() {
+		return dogRepository.findDeleted().stream()
+				.map(r -> new DeletedDog(r.getId(), r.getKind(), r.getPrice(), r.getImage(), r.getDeletedAt()))
+				.toList();
+	}
+
 	/** 단건 조회 시 조회수를 1 증가시키고, 증가된 값을 담아 반환한다. */
 	@Transactional
 	public Optional<Dog> readAndCount(Long id) {
