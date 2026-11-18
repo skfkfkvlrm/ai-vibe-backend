@@ -1,5 +1,10 @@
 package com.oraclejava.demodog.dog;
 
+import java.time.LocalDateTime;
+
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -8,9 +13,15 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
-/** dogs 테이블에 매핑되는 JPA 엔티티. API 응답은 {@link Dog} 레코드로 변환해 반환한다. */
+/**
+ * dogs 테이블에 매핑되는 JPA 엔티티. API 응답은 {@link Dog} 레코드로 변환해 반환한다.
+ * 삭제는 항상 soft delete다: delete 계열 호출은 행을 지우지 않고 deleted_at만 채우며,
+ * 삭제된 행은 조회·수정·count에서 자동으로 제외된다.
+ */
 @Entity
 @Table(name = "dogs")
+@SQLDelete(sql = "update dogs set deleted_at = now() where id = ?")
+@SQLRestriction("deleted_at is null")
 public class DogEntity {
 
 	@Id
@@ -43,6 +54,10 @@ public class DogEntity {
 	/** 조회수 */
 	@Column(nullable = false)
 	private long readcount;
+
+	/** 삭제 시각. NULL이면 정상. 애플리케이션이 직접 쓰지 않고 SQLDelete/복구 쿼리만 바꾼다. */
+	@Column(name = "deleted_at", insertable = false, updatable = false)
+	private LocalDateTime deletedAt;
 
 	protected DogEntity() {
 	}

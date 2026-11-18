@@ -53,6 +53,16 @@ public class DogService {
 		});
 	}
 
+	/** soft delete된 개를 되살린다. 삭제 상태가 아니거나 없는 id면 비어 있다. */
+	@Transactional
+	public Optional<Dog> restore(Long id) {
+		if (dogRepository.restore(id) == 0) {
+			return Optional.empty();
+		}
+		return dogRepository.findById(id).map(DogEntity::toDog);
+	}
+
+	/** 행을 지우지 않고 deleted_at만 채운다(엔티티의 SQLDelete). 없거나 이미 삭제된 id면 false. */
 	@Transactional
 	public boolean delete(Long id) {
 		if (!dogRepository.existsById(id)) {
