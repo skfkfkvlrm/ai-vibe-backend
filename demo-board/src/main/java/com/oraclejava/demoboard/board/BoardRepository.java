@@ -16,6 +16,14 @@ public interface BoardRepository extends JpaRepository<BoardEntity, Long> {
 	/** 삭제되지 않은 글만. 원글 그룹은 최신순, 그룹 안에서는 re_step 순(원글 아래에 답글). */
 	List<BoardEntity> findAllByDeletedAtIsNullOrderByReRefDescReStepAsc();
 
+	/** 회원이 쓴 삭제되지 않은 글·답글, 최신 글 먼저. */
+	List<BoardEntity> findAllByMemberIdAndDeletedAtIsNullOrderByBoardNumDesc(Long memberId);
+
+	/** 회원 이름이 바뀌거나 탈퇴할 때 그 회원이 쓴 모든 글(삭제된 글 포함)의 작성자명을 일괄 갱신한다. */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("update BoardEntity b set b.boardName = :name where b.memberId = :memberId")
+	int updateAuthorName(@Param("memberId") Long memberId, @Param("name") String name);
+
 	/** 관리자용: 삭제된 글·답글을 삭제 시각 역순으로. */
 	List<BoardEntity> findAllByDeletedAtIsNotNullOrderByDeletedAtDesc();
 

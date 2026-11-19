@@ -12,6 +12,7 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import com.oraclejava.demoboard.member.JwtProvider;
+import com.oraclejava.demoboard.member.MemberRepository;
 
 /**
  * 무상태 JWT 보안 설정.
@@ -26,7 +27,8 @@ import com.oraclejava.demoboard.member.JwtProvider;
 public class SecurityConfig {
 
 	@Bean
-	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtProvider jwtProvider) throws Exception {
+	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtProvider jwtProvider,
+			MemberRepository memberRepository) throws Exception {
 		http
 				.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -42,7 +44,8 @@ public class SecurityConfig {
 						.anyRequest().authenticated())
 				.exceptionHandling(handling -> handling
 						.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-				.addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class);
+				.addFilterBefore(new JwtAuthenticationFilter(jwtProvider, memberRepository),
+						UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}
 }

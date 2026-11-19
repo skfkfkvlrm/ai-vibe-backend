@@ -41,15 +41,20 @@ public class JwtProvider {
 	}
 
 	public String issue(MemberEntity member) {
-		return issue(member.getMemberId(), member.getRole(), expiration);
+		return issue(member.getMemberId(), member.getRole(), member.getTokenVersion(), expiration);
 	}
 
-	/** 만료 시간을 지정해 발급한다(테스트에서 만료 토큰을 만들 때도 사용). */
+	/** 만료 시간을 지정해 발급한다(테스트에서 만료 토큰을 만들 때도 사용). 토큰 버전은 0이다. */
 	public String issue(Long memberId, String role, Duration validFor) {
+		return issue(memberId, role, 0, validFor);
+	}
+
+	private String issue(Long memberId, String role, int version, Duration validFor) {
 		Date now = new Date();
 		return Jwts.builder()
 				.subject(String.valueOf(memberId))
 				.claim("role", role)
+				.claim("ver", version)
 				.issuedAt(now)
 				.expiration(new Date(now.getTime() + validFor.toMillis()))
 				.signWith(key)
@@ -66,7 +71,9 @@ public class JwtProvider {
 		Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
 		try {
 			String role = claims.get("role", String.class);
-			return new JwtClaims(Long.valueOf(claims.getSubject()), role != null ? role : MemberEntity.ROLE_USER);
+			Integer version = claims.get("ver", Integer.class);
+			return new JwtClaims(Long.valueOf(claims.getSubject()), role != null ? role : MemberEntity.ROLE_USER,
+					version != null ? version : 0);
 		} catch (NumberFormatException e) {
 			throw new JwtException("invalid subject", e);
 		}
