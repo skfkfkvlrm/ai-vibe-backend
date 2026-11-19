@@ -46,6 +46,39 @@ public class MemberService {
 		return member;
 	}
 
+	/**
+	 * 현재 비밀번호를 확인하고 새 비밀번호로 바꾼다. 이전에 발급된 토큰은 모두 무효가 되므로
+	 * 호출한 쪽은 반환된 회원으로 새 토큰을 발급해 현재 로그인을 이어간다.
+	 */
+	@Transactional
+	public MemberEntity changePassword(Long memberId, String currentPassword, String newPassword) {
+		MemberEntity member = requireMember(memberId);
+		if (currentPassword == null || !passwordEncoder.matches(currentPassword, member.getPassword())) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Current password does not match");
+		}
+		if (passwordEncoder.matches(newPassword, member.getPassword())) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password must differ from the current one");
+		}
+		member.changePassword(passwordEncoder.encode(newPassword));
+		return memberRepository.saveAndFlush(member);
+	}
+
+	/** 이름·이메일 수정. null인 항목은 바꾸지 않는다. 이메일 중복은 409. */
+	@Transactional
+	public MemberEntity updateProfile(Long memberId, String newName, String newEmail) {
+		MemberEntity member = requireMember(memberId);
+		if (newEmail != null && !newEmail.equals(member.getEmail()) && memberRepository.existsByEmail(newEmail)) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "email already exists");
+		}
+		member.updateProfile(newName, newEmail);
+		return memberRepository.saveAndFlush(member);
+	}
+
+	private MemberEntity requireMember(Long memberId) {
+		return memberRepository.findById(memberId)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid token"));
+	}
+
 	/** 토큰의 회원이 삭제되었다면 401로 취급한다. */
 	public MemberResponse findForToken(Long memberId) {
 		return memberRepository.findById(memberId)

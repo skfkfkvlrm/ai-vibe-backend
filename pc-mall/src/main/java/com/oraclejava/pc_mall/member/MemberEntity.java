@@ -94,6 +94,16 @@ public class MemberEntity {
 		this.tokenVersion++;
 	}
 
+	/** null인 항목은 바꾸지 않는다. */
+	public void updateProfile(String newName, String newEmail) {
+		if (newName != null) this.name = newName;
+		if (newEmail != null) this.email = newEmail;
+	}
+
+	public String getEmail() {
+		return email;
+	}
+
 	public Long getMemberId() {
 		return memberId;
 	}
