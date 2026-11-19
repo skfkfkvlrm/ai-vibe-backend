@@ -62,6 +62,10 @@ public class BoardEntity {
 	@Column(name = "board_date", nullable = false)
 	private LocalDateTime boardDate;
 
+	/** 삭제 시각. null이면 삭제되지 않은 글 (soft delete) */
+	@Column(name = "deleted_at")
+	private LocalDateTime deletedAt;
+
 	protected BoardEntity() {
 	}
 
@@ -106,6 +110,11 @@ public class BoardEntity {
 		if (r.boardFile() != null) this.boardFile = r.boardFile();
 	}
 
+	/** 행을 지우지 않고 삭제 시각만 기록한다. */
+	public void markDeleted(LocalDateTime now) {
+		this.deletedAt = now;
+	}
+
 	public Board toBoard() {
 		return new Board(boardNum, boardName, boardSubject, boardContent, boardFile,
 				reRef, reLev, reStep, boardReadcount, boardDate);
@@ -117,6 +126,10 @@ public class BoardEntity {
 
 	public String getBoardPass() {
 		return boardPass;
+	}
+
+	public LocalDateTime getDeletedAt() {
+		return deletedAt;
 	}
 
 	public Long getReRef() {

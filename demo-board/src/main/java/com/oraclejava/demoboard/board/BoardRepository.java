@@ -13,12 +13,16 @@ import jakarta.persistence.LockModeType;
 
 public interface BoardRepository extends JpaRepository<BoardEntity, Long> {
 
-	/** 원글 그룹은 최신순, 그룹 안에서는 re_step 순(원글 아래에 답글). */
-	List<BoardEntity> findAllByOrderByReRefDescReStepAsc();
+	/** 삭제되지 않은 글만. 원글 그룹은 최신순, 그룹 안에서는 re_step 순(원글 아래에 답글). */
+	List<BoardEntity> findAllByDeletedAtIsNullOrderByReRefDescReStepAsc();
 
-	/** 동시 요청에서도 누락되지 않도록 DB에서 원자적으로 조회수를 1 올린다. */
+	/** 삭제되지 않은 글 한 건. 삭제된 글은 없는 글로 취급한다. */
+	Optional<BoardEntity> findByBoardNumAndDeletedAtIsNull(Long boardNum);
+
+	/** 동시 요청에서도 누락되지 않도록 DB에서 원자적으로 조회수를 1 올린다. 삭제된 글은 제외. */
 	@Modifying(clearAutomatically = true)
-	@Query("update BoardEntity b set b.boardReadcount = b.boardReadcount + 1 where b.boardNum = :id")
+	@Query("update BoardEntity b set b.boardReadcount = b.boardReadcount + 1 "
+			+ "where b.boardNum = :id and b.deletedAt is null")
 	int increaseReadcount(@Param("id") Long id);
 
 	/** 답글이 들어갈 자리를 만들기 위해 같은 그룹에서 step보다 큰 re_step을 1씩 민다. */
@@ -26,8 +30,8 @@ public interface BoardRepository extends JpaRepository<BoardEntity, Long> {
 	@Query("update BoardEntity b set b.reStep = b.reStep + 1 where b.reRef = :ref and b.reStep > :step")
 	int shiftSteps(@Param("ref") Long ref, @Param("step") int step);
 
-	/** 동시 답글의 re_step 충돌을 막기 위해 부모 행을 잠그고 조회한다. */
+	/** 동시 답글의 re_step 충돌을 막기 위해 부모 행을 잠그고 조회한다. 삭제된 글은 제외. */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select b from BoardEntity b where b.boardNum = :id")
+	@Query("select b from BoardEntity b where b.boardNum = :id and b.deletedAt is null")
 	Optional<BoardEntity> findForUpdate(@Param("id") Long id);
 }

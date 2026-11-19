@@ -22,7 +22,7 @@ public class BoardService {
 	}
 
 	public List<Board> findAll() {
-		return boardRepository.findAllByOrderByReRefDescReStepAsc().stream()
+		return boardRepository.findAllByDeletedAtIsNullOrderByReRefDescReStepAsc().stream()
 				.map(BoardEntity::toBoard)
 				.toList();
 	}
@@ -33,7 +33,7 @@ public class BoardService {
 		if (boardRepository.increaseReadcount(id) == 0) {
 			throw notFound(id);
 		}
-		return boardRepository.findById(id).orElseThrow(() -> notFound(id)).toBoard();
+		return boardRepository.findByBoardNumAndDeletedAtIsNull(id).orElseThrow(() -> notFound(id)).toBoard();
 	}
 
 	/** 원글 작성. re_ref는 자신의 글 번호, re_lev와 re_step은 0이다. */
@@ -79,11 +79,12 @@ public class BoardService {
 	@Transactional
 	public void delete(Long id, String pass) {
 		BoardEntity entity = findAndCheck(id, pass);
-		boardRepository.delete(entity);
+		// 행은 지우지 않고 삭제 시각만 기록한다(soft delete). 답글 행도 그대로 보존된다.
+		entity.markDeleted(LocalDateTime.now());
 	}
 
 	private BoardEntity findAndCheck(Long id, String pass) {
-		BoardEntity entity = boardRepository.findById(id).orElseThrow(() -> notFound(id));
+		BoardEntity entity = boardRepository.findByBoardNumAndDeletedAtIsNull(id).orElseThrow(() -> notFound(id));
 		if (!passwordEncoder.matches(pass, entity.getBoardPass())) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Password does not match");
 		}

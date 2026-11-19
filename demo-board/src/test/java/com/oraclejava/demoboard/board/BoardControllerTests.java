@@ -203,4 +203,50 @@ class BoardControllerTests {
 		long id = write("/api/boards", "x");
 		mvc.perform(delete("/api/boards/" + id)).andExpect(status().isBadRequest());
 	}
+
+	/** 삭제는 soft delete: 204, 목록에서 제외, DB 행은 남고 deleted_at이 기록된다. */
+	@Test
+	void deleteIsSoftDelete() throws Exception {
+		long keep = write("/api/boards", "남는 글");
+		long gone = write("/api/boards", "삭제될 글");
+
+		mvc.perform(delete("/api/boards/" + gone).header("X-Board-Pass", PASS))
+				.andExpect(status().isNoContent());
+
+		mvc.perform(get("/api/boards"))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].board_num").value(keep));
+		Assertions.assertNotNull(boardRepository.findById(gone).orElseThrow().getDeletedAt());
+		Assertions.assertNull(boardRepository.findById(keep).orElseThrow().getDeletedAt());
+	}
+
+	/** 삭제된 글은 조회·수정·삭제·답글 모두 404, 조회수도 오르지 않는다. */
+	@Test
+	void softDeletedPostIsNotFound() throws Exception {
+		long id = write("/api/boards", "삭제될 글");
+		String url = "/api/boards/" + id;
+		mvc.perform(delete(url).header("X-Board-Pass", PASS)).andExpect(status().isNoContent());
+
+		mvc.perform(get(url)).andExpect(status().isNotFound());
+		mvc.perform(put(url).contentType(MediaType.APPLICATION_JSON).content(json("a", PASS, "s")))
+				.andExpect(status().isNotFound());
+		mvc.perform(patch(url).contentType(MediaType.APPLICATION_JSON).content("{\"board_pass\":\"" + PASS + "\"}"))
+				.andExpect(status().isNotFound());
+		mvc.perform(delete(url).header("X-Board-Pass", PASS)).andExpect(status().isNotFound());
+		mvc.perform(post(url + "/replies").contentType(MediaType.APPLICATION_JSON).content(json("a", PASS, "s")))
+				.andExpect(status().isNotFound());
+	}
+
+	/** 답글이 있는 원글을 삭제해도 답글 행은 DB에 그대로 남는다(관리자 화면용 보존). */
+	@Test
+	void deletingRootKeepsReplyRows() throws Exception {
+		long root = write("/api/boards", "원글");
+		long reply = write("/api/boards/" + root + "/replies", "답글");
+
+		mvc.perform(delete("/api/boards/" + root).header("X-Board-Pass", PASS))
+				.andExpect(status().isNoContent());
+
+		Assertions.assertEquals(2, boardRepository.count());
+		Assertions.assertNull(boardRepository.findById(reply).orElseThrow().getDeletedAt());
+	}
 }
