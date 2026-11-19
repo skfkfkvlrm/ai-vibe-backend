@@ -34,6 +34,10 @@ public class LoginAttemptEntity {
 	@Column(name = "locked_until")
 	private LocalDateTime lockedUntil;
 
+	/** 마지막으로 실패한 시각. 오래된 기록을 자동 정리하는 기준이며, 이 컬럼이 생기기 전의 행은 null이다. */
+	@Column(name = "last_failed_at")
+	private LocalDateTime lastFailedAt;
+
 	protected LoginAttemptEntity() {
 	}
 
@@ -57,6 +61,7 @@ public class LoginAttemptEntity {
 			lockedUntil = null;
 		}
 		failedCount++;
+		lastFailedAt = now;
 		if (failedCount >= maxFailures) {
 			lockedUntil = now.plus(lockDuration);
 			return true;

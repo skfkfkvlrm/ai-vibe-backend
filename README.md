@@ -16,3 +16,19 @@ Spring Boot 백엔드 6개를 폴더별로 묶은 저장소입니다. 각 폴더
 - 같은 DB를 쓰는 서비스(dog 계열, board 계열)를 동시에 기동하면 스키마가 충돌할 수 있습니다.
 - 빌드: 각 폴더에서 `.\gradlew.bat build`
 - 프론트엔드는 `ai-vibe-frontend` 저장소를 참고하세요.
+
+## demo-board 실행 안내
+
+프로파일은 두 가지입니다. 지정하지 않으면 `local`(개발)로 실행됩니다.
+
+| 프로파일 | 켜는 법 | DB 접속 정보 | 특징 |
+|---|---|---|---|
+| `local`(기본) | 지정 없음 | `demo-board/config/application-local.properties`(Git에 올리지 않음) | 스키마를 자동으로 갱신(`ddl-auto=update`) |
+| `prod` | `SPRING_PROFILES_ACTIVE=prod` | 환경변수 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | 스키마는 검증만(`validate`), 오류 응답에 내부 정보 없음, 액추에이터는 관리 포트에서만 |
+
+- **새 PC에서 처음 실행**: `demo-board/config/application-local.properties.example`을 같은 폴더의 `application-local.properties`로 복사해 값을 채웁니다. 작업 폴더가 `demo-board`일 때 자동으로 읽히며, 다른 위치에서 실행하면 위 환경변수 3개를 대신 씁니다.
+- **`JWT_SECRET`**(32바이트 이상)은 어느 프로파일이든 환경변수로 반드시 지정합니다.
+- **실행**: `demo-board` 폴더에서 `.\gradlew.bat bootRun` 또는 `java -jar build\libs\demo-board-0.0.1-SNAPSHOT.jar`
+- **헬스 체크**: `local`은 `http://localhost:8084/actuator/health`. `prod`는 서비스 포트의 `/livez`·`/readyz`(상태만 반환)와, 이 PC에서만 열리는 관리 포트(`MANAGEMENT_PORT`, 기본 9090)의 `/actuator/health/core`(DB만)·`/actuator/health/ops`(구성요소 상세)입니다.
+- **제한 기록 자동 정리**: 로그인 실패(`login_attempt`)와 비회원 쓰기 제한(`write_rate_limit`) 기록 중 1일 지난 행을 1시간마다 지웁니다. 관리자 감사 로그(`admin_audit_log`)는 지우지 않습니다.
+- **프론트엔드와 함께 실행**: 백엔드를 8084에서 띄운 뒤 `ai-vibe-frontend/board-project`에서 `npm run dev`(개발 서버가 `/api` 요청을 8084로 전달합니다).
