@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.oraclejava.demoboard.audit.AuditLogResponse;
 import com.oraclejava.demoboard.board.Board;
 import com.oraclejava.demoboard.security.CurrentMember;
 
@@ -38,8 +39,14 @@ public class AdminController {
 	}
 
 	@PostMapping("/boards/{id}/restore")
-	public Board restore(@PathVariable Long id) {
-		return adminService.restore(id);
+	public Board restore(@PathVariable Long id, Principal principal) {
+		return adminService.restore(CurrentMember.idOf(principal), id);
+	}
+
+	/** 관리자 작업·로그인 잠금 기록(최신 200건, 최신순). 조회 전용. */
+	@GetMapping("/audit-logs")
+	public List<AuditLogResponse> auditLogs() {
+		return adminService.auditLogs();
 	}
 
 	@GetMapping("/members")
@@ -53,8 +60,8 @@ public class AdminController {
 	}
 
 	@DeleteMapping("/members/{id}/ban")
-	public AdminMemberResponse unban(@PathVariable Long id) {
-		return adminService.unban(id);
+	public AdminMemberResponse unban(@PathVariable Long id, Principal principal) {
+		return adminService.unban(CurrentMember.idOf(principal), id);
 	}
 
 	/** 임시 비밀번호는 응답에 한 번만 담기므로 캐시하지 않는다. */

@@ -18,7 +18,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.oraclejava.demoboard.security.ClientIp;
 import com.oraclejava.demoboard.security.CurrentMember;
+import com.oraclejava.demoboard.security.LimitResponse;
+import com.oraclejava.demoboard.security.WriteRateLimitService;
+import com.oraclejava.demoboard.security.WriteRateLimitService.Kind;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * 게시판 API. 조회는 공개이고, 쓰기·수정·삭제는 로그인 회원(Bearer 토큰) 또는 비회원(글별 비밀번호)이 할 수 있다.
@@ -29,9 +35,11 @@ import com.oraclejava.demoboard.security.CurrentMember;
 public class BoardController {
 
 	private final BoardService boardService;
+	private final WriteRateLimitService rateLimit;
 
-	public BoardController(BoardService boardService) {
+	public BoardController(BoardService boardService, WriteRateLimitService rateLimit) {
 		this.boardService = boardService;
+		this.rateLimit = rateLimit;
 	}
 
 	@GetMapping
@@ -45,22 +53,43 @@ public class BoardController {
 		return boardService.readAndCount(id);
 	}
 
-	/** 원글 작성. 로그인 상태면 이름·비밀번호는 필요 없다. */
+	/** 원글 작성. 로그인 상태면 이름·비밀번호는 필요 없다. 비회원은 IP당 3분에 1개(초과 시 429). */
 	@PostMapping
-	public ResponseEntity<Board> create(@RequestBody BoardRequest request, Principal principal) {
+	public ResponseEntity<?> create(@RequestBody BoardRequest request, Principal principal,
+			HttpServletRequest http) {
 		Long memberId = CurrentMember.idOf(principal);
 		validateCreate(request, memberId);
+		String ip = ClientIp.of(http);
+		if (memberId == null) {
+			long wait = rateLimit.retryAfterSeconds(Kind.POST, ip);
+			if (wait > 0) {
+				return LimitResponse.tooMany("RATE_LIMITED", wait);
+			}
+		}
 		Board created = boardService.create(request, memberId);
+		if (memberId == null) {
+			rateLimit.record(Kind.POST, ip);
+		}
 		return ResponseEntity.created(URI.create("/api/boards/" + created.boardNum())).body(created);
 	}
 
-	/** 답글 작성. */
+	/** 답글 작성. 비회원은 IP당 1분에 3개(초과 시 429). */
 	@PostMapping("/{id}/replies")
-	public ResponseEntity<Board> reply(@PathVariable Long id, @RequestBody BoardRequest request,
-			Principal principal) {
+	public ResponseEntity<?> reply(@PathVariable Long id, @RequestBody BoardRequest request,
+			Principal principal, HttpServletRequest http) {
 		Long memberId = CurrentMember.idOf(principal);
 		validateCreate(request, memberId);
+		String ip = ClientIp.of(http);
+		if (memberId == null) {
+			long wait = rateLimit.retryAfterSeconds(Kind.REPLY, ip);
+			if (wait > 0) {
+				return LimitResponse.tooMany("RATE_LIMITED", wait);
+			}
+		}
 		Board created = boardService.reply(id, request, memberId);
+		if (memberId == null) {
+			rateLimit.record(Kind.REPLY, ip);
+		}
 		return ResponseEntity.created(URI.create("/api/boards/" + created.boardNum())).body(created);
 	}
 

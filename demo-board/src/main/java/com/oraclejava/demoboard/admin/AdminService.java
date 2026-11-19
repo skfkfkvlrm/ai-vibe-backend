@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.oraclejava.demoboard.audit.AuditLogResponse;
+import com.oraclejava.demoboard.audit.AuditService;
 import com.oraclejava.demoboard.board.Board;
 import com.oraclejava.demoboard.board.BoardEntity;
 import com.oraclejava.demoboard.board.BoardRepository;
@@ -26,10 +28,12 @@ public class AdminService {
 
 	private final BoardRepository boardRepository;
 	private final MemberService memberService;
+	private final AuditService auditService;
 
-	public AdminService(BoardRepository boardRepository, MemberService memberService) {
+	public AdminService(BoardRepository boardRepository, MemberService memberService, AuditService auditService) {
 		this.boardRepository = boardRepository;
 		this.memberService = memberService;
+		this.auditService = auditService;
 	}
 
 	/** 삭제된 글·답글을 삭제 시각 역순으로. 답글에는 원글의 삭제 여부를 함께 담는다. */
@@ -53,12 +57,14 @@ public class AdminService {
 
 	/** 선택한 글 1건만 복구한다. 삭제 상태가 아니거나 없는 글이면 404. */
 	@Transactional
-	public Board restore(Long id) {
+	public Board restore(Long adminId, Long id) {
 		BoardEntity entity = boardRepository.findById(id)
 				.filter(b -> b.getDeletedAt() != null)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Deleted board not found: " + id));
 		entity.restore();
-		return boardRepository.saveAndFlush(entity).toBoard();
+		Board restored = boardRepository.saveAndFlush(entity).toBoard();
+		auditService.record(adminId, AuditService.BOARD_RESTORE, "BOARD", id, null);
+		return restored;
 	}
 
 	public List<AdminMemberResponse> members() {
@@ -87,17 +93,30 @@ public class AdminService {
 			}
 			default -> throw badRequest("type must be one of 1D, 7D, 30D, PERMANENT, UNTIL");
 		};
-		return AdminMemberResponse.from(memberService.ban(adminId, targetId, request.reason().trim(), until), now);
+		AdminMemberResponse response = AdminMemberResponse
+				.from(memberService.ban(adminId, targetId, request.reason().trim(), until), now);
+		auditService.record(adminId, AuditService.MEMBER_BAN, "MEMBER", targetId,
+				"type=" + request.type() + ", reason=" + request.reason().trim());
+		return response;
 	}
 
 	@Transactional
-	public AdminMemberResponse unban(Long targetId) {
-		return AdminMemberResponse.from(memberService.unban(targetId), LocalDateTime.now());
+	public AdminMemberResponse unban(Long adminId, Long targetId) {
+		AdminMemberResponse response = AdminMemberResponse.from(memberService.unban(targetId), LocalDateTime.now());
+		auditService.record(adminId, AuditService.MEMBER_UNBAN, "MEMBER", targetId, null);
+		return response;
 	}
 
 	@Transactional
 	public TempPasswordResponse resetPassword(Long adminId, Long targetId) {
-		return new TempPasswordResponse(memberService.resetPassword(adminId, targetId));
+		TempPasswordResponse response = new TempPasswordResponse(memberService.resetPassword(adminId, targetId));
+		// 임시 비밀번호는 기록하지 않는다.
+		auditService.record(adminId, AuditService.MEMBER_PASSWORD_RESET, "MEMBER", targetId, null);
+		return response;
+	}
+
+	public List<AuditLogResponse> auditLogs() {
+		return auditService.latest();
 	}
 
 	private static ResponseStatusException badRequest(String message) {

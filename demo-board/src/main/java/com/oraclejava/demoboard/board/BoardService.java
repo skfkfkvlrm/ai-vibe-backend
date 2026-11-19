@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.oraclejava.demoboard.audit.AuditService;
 import com.oraclejava.demoboard.member.MemberAccess;
 import com.oraclejava.demoboard.member.MemberService;
 
@@ -25,12 +26,15 @@ public class BoardService {
 	private final BoardRepository boardRepository;
 	private final MemberService memberService;
 	private final MemberAccess memberAccess;
+	private final AuditService auditService;
 	private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-	public BoardService(BoardRepository boardRepository, MemberService memberService, MemberAccess memberAccess) {
+	public BoardService(BoardRepository boardRepository, MemberService memberService, MemberAccess memberAccess,
+			AuditService auditService) {
 		this.boardRepository = boardRepository;
 		this.memberService = memberService;
 		this.memberAccess = memberAccess;
+		this.auditService = auditService;
 	}
 
 	public List<Board> findAll() {
@@ -82,6 +86,7 @@ public class BoardService {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "board_name is required");
 		}
 		entity.apply(request, nameChangeable);
+		auditAdminEdit(checked, memberId, AuditService.BOARD_EDIT);
 		return boardRepository.saveAndFlush(entity).toBoard();
 	}
 
@@ -90,14 +95,24 @@ public class BoardService {
 		Checked checked = findAndCheck(id, request.boardPass(), memberId);
 		BoardEntity entity = checked.entity();
 		entity.applyNonNull(request, !entity.isOwnedByMember() && !checked.byAdmin());
+		auditAdminEdit(checked, memberId, AuditService.BOARD_EDIT);
 		return boardRepository.saveAndFlush(entity).toBoard();
 	}
 
 	@Transactional
 	public void delete(Long id, String pass, Long memberId) {
-		BoardEntity entity = findAndCheck(id, pass, memberId).entity();
+		Checked checked = findAndCheck(id, pass, memberId);
+		BoardEntity entity = checked.entity();
+		auditAdminEdit(checked, memberId, AuditService.BOARD_DELETE);
 		// 행은 지우지 않고 삭제 시각만 기록한다(soft delete). 답글 행도 그대로 보존된다.
 		entity.markDeleted(LocalDateTime.now());
+	}
+
+	/** 관리자 권한으로 통과한 수정·삭제만 감사 로그에 남긴다(작성자 본인·비회원 비밀번호 경로는 제외). */
+	private void auditAdminEdit(Checked checked, Long adminId, String action) {
+		if (checked.byAdmin()) {
+			auditService.record(adminId, action, "BOARD", checked.entity().getBoardNum(), null);
+		}
 	}
 
 	private BoardEntity newEntity(BoardRequest request, Long memberId) {

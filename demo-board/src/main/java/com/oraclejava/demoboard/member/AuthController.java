@@ -14,7 +14,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.oraclejava.demoboard.security.ClientIp;
 import com.oraclejava.demoboard.security.CurrentMember;
+import com.oraclejava.demoboard.security.LimitResponse;
+import com.oraclejava.demoboard.security.LoginAttemptService;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 /** 회원가입·로그인·내 정보. */
 @RestController
@@ -23,10 +28,12 @@ public class AuthController {
 
 	private final MemberService memberService;
 	private final JwtProvider jwtProvider;
+	private final LoginAttemptService loginAttempts;
 
-	public AuthController(MemberService memberService, JwtProvider jwtProvider) {
+	public AuthController(MemberService memberService, JwtProvider jwtProvider, LoginAttemptService loginAttempts) {
 		this.memberService = memberService;
 		this.jwtProvider = jwtProvider;
+		this.loginAttempts = loginAttempts;
 	}
 
 	@PostMapping("/signup")
@@ -47,13 +54,30 @@ public class AuthController {
 		}
 	}
 
-	/** 비밀번호가 맞아도 밴 중이면 토큰 대신 403과 밴 안내(code, reason, until, permanent)를 돌려준다. */
+	/**
+	 * 아이디+IP별로 연속 5회 실패하면 5분간 429(LOGIN_LOCKED)를 돌려준다(올바른 비밀번호도 거부).
+	 * 비밀번호가 맞아도 밴 중이면 토큰 대신 403과 밴 안내(code, reason, until, permanent)를 돌려준다.
+	 */
 	@PostMapping("/login")
-	public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+	public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletRequest http) {
 		if (request == null || isBlank(request.loginId()) || isBlank(request.password())) {
 			throw badRequest("login_id and password are required");
 		}
-		MemberEntity member = memberService.authenticate(request.loginId(), request.password());
+		String ip = ClientIp.of(http);
+		long locked = loginAttempts.lockedSeconds(request.loginId(), ip);
+		if (locked > 0) {
+			return LimitResponse.tooMany("LOGIN_LOCKED", locked);
+		}
+		MemberEntity member;
+		try {
+			member = memberService.authenticate(request.loginId(), request.password());
+		} catch (ResponseStatusException e) {
+			if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+				recordFailureQuietly(request.loginId(), ip);
+			}
+			throw e;
+		}
+		loginAttempts.reset(request.loginId(), ip);
 		if (member.isBanned(LocalDateTime.now())) {
 			return ResponseEntity.status(HttpStatus.FORBIDDEN).body(BanResponse.of(member));
 		}
@@ -69,6 +93,15 @@ public class AuthController {
 			throw unauthorized();
 		}
 		return memberService.findForToken(memberId);
+	}
+
+	/** 동시 요청으로 실패 기록이 겹쳐 제약 오류가 나도 로그인 응답(401)은 그대로 낸다. */
+	private void recordFailureQuietly(String loginId, String ip) {
+		try {
+			loginAttempts.recordFailure(loginId, ip);
+		} catch (DataIntegrityViolationException ignored) {
+			// 같은 아이디+IP의 첫 실패가 동시에 들어온 경우: 한 건은 기록되었으므로 무시한다.
+		}
 	}
 
 	private static boolean isBlank(String s) {
