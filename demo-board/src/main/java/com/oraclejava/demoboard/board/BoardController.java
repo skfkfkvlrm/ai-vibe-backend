@@ -2,7 +2,7 @@ package com.oraclejava.demoboard.board;
 
 import java.net.URI;
 import java.security.Principal;
-import java.util.List;
+import java.util.Set;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -34,6 +35,9 @@ import jakarta.servlet.http.HttpServletRequest;
 @RequestMapping("/api/boards")
 public class BoardController {
 
+	private static final Set<Integer> ALLOWED_SIZES = Set.of(10, 20, 50);
+	private static final int MAX_QUERY_LENGTH = 100;
+
 	private final BoardService boardService;
 	private final WriteRateLimitService rateLimit;
 
@@ -42,15 +46,29 @@ public class BoardController {
 		this.rateLimit = rateLimit;
 	}
 
+	/**
+	 * 원글 기준 페이징 목록(답글은 해당 원글 뒤에 동봉). page는 0부터, size는 10·20·50(기본 10),
+	 * field는 TITLE_CONTENT(기본)·AUTHOR, q가 비어 있으면 검색하지 않는다(최대 100자).
+	 */
 	@GetMapping
-	public List<Board> list() {
-		return boardService.findAll();
+	public BoardPage list(@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "10") int size,
+			@RequestParam(required = false) String field,
+			@RequestParam(required = false) String q) {
+		if (page < 0) throw badRequest("page must be 0 or more");
+		if (!ALLOWED_SIZES.contains(size)) throw badRequest("size must be one of 10, 20, 50");
+		SearchField searchField = parseField(field);
+		String query = q == null || q.isBlank() ? null : q.trim();
+		if (query != null && query.length() > MAX_QUERY_LENGTH) {
+			throw badRequest("q must be at most " + MAX_QUERY_LENGTH + " characters");
+		}
+		return boardService.findPage(page, size, searchField, query);
 	}
 
-	/** 단건 조회. 호출될 때마다 board_readcount가 1 증가한다. */
+	/** 단건 조회. 기본적으로 호출할 때마다 board_readcount가 1 증가하고, count=false이면 올리지 않는다. */
 	@GetMapping("/{id}")
-	public Board get(@PathVariable Long id) {
-		return boardService.readAndCount(id);
+	public Board get(@PathVariable Long id, @RequestParam(defaultValue = "true") boolean count) {
+		return boardService.read(id, count);
 	}
 
 	/** 원글 작성. 로그인 상태면 이름·비밀번호는 필요 없다. 비회원은 IP당 3분에 1개(초과 시 429). */
@@ -128,6 +146,15 @@ public class BoardController {
 		if (memberId == null) {
 			if (isBlank(r.boardName())) throw badRequest("board_name is required");
 			if (isBlank(r.boardPass())) throw badRequest("board_pass is required");
+		}
+	}
+
+	private static SearchField parseField(String field) {
+		if (field == null || field.isBlank()) return SearchField.TITLE_CONTENT;
+		try {
+			return SearchField.valueOf(field);
+		} catch (IllegalArgumentException e) {
+			throw badRequest("field must be TITLE_CONTENT or AUTHOR");
 		}
 	}
 

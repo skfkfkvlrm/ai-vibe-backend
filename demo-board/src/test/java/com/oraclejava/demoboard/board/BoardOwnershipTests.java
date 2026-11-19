@@ -113,7 +113,7 @@ class BoardOwnershipTests {
 	void guestPostKeepsPasswordRule() throws Exception {
 		long id = create(guestBody("손님 글"), null);
 		String url = "/api/boards/" + id;
-		mvc.perform(get("/api/boards")).andExpect(jsonPath("$[0].member_id").value(Matchers.nullValue()));
+		mvc.perform(get("/api/boards")).andExpect(jsonPath("$.items[0].member_id").value(Matchers.nullValue()));
 
 		String noPass = "{\"board_subject\":\"수정됨\"}";
 		String wrongPass = "{\"board_pass\":\"wrong\",\"board_subject\":\"수정됨\"}";

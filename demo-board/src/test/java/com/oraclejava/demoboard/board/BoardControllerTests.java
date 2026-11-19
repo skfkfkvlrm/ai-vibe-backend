@@ -91,23 +91,23 @@ class BoardControllerTests {
 		// A(lev 0, step 0), C(1, 1), B(1, 2), D(2, 3), 모두 같은 re_ref
 		mvc.perform(get("/api/boards"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.length()").value(4))
-				.andExpect(jsonPath("$[0].board_subject").value("A"))
-				.andExpect(jsonPath("$[0].re_lev").value(0))
-				.andExpect(jsonPath("$[0].re_step").value(0))
-				.andExpect(jsonPath("$[1].board_subject").value("C"))
-				.andExpect(jsonPath("$[1].re_lev").value(1))
-				.andExpect(jsonPath("$[1].re_step").value(1))
-				.andExpect(jsonPath("$[2].board_subject").value("B"))
-				.andExpect(jsonPath("$[2].re_lev").value(1))
-				.andExpect(jsonPath("$[2].re_step").value(2))
-				.andExpect(jsonPath("$[3].board_subject").value("D"))
-				.andExpect(jsonPath("$[3].re_lev").value(2))
-				.andExpect(jsonPath("$[3].re_step").value(3))
-				.andExpect(jsonPath("$[0].re_ref").value(a))
-				.andExpect(jsonPath("$[1].re_ref").value(a))
-				.andExpect(jsonPath("$[2].re_ref").value(a))
-				.andExpect(jsonPath("$[3].re_ref").value(a));
+				.andExpect(jsonPath("$.items.length()").value(4))
+				.andExpect(jsonPath("$.items[0].board_subject").value("A"))
+				.andExpect(jsonPath("$.items[0].re_lev").value(0))
+				.andExpect(jsonPath("$.items[0].re_step").value(0))
+				.andExpect(jsonPath("$.items[1].board_subject").value("C"))
+				.andExpect(jsonPath("$.items[1].re_lev").value(1))
+				.andExpect(jsonPath("$.items[1].re_step").value(1))
+				.andExpect(jsonPath("$.items[2].board_subject").value("B"))
+				.andExpect(jsonPath("$.items[2].re_lev").value(1))
+				.andExpect(jsonPath("$.items[2].re_step").value(2))
+				.andExpect(jsonPath("$.items[3].board_subject").value("D"))
+				.andExpect(jsonPath("$.items[3].re_lev").value(2))
+				.andExpect(jsonPath("$.items[3].re_step").value(3))
+				.andExpect(jsonPath("$.items[0].re_ref").value(a))
+				.andExpect(jsonPath("$.items[1].re_ref").value(a))
+				.andExpect(jsonPath("$.items[2].re_ref").value(a))
+				.andExpect(jsonPath("$.items[3].re_ref").value(a));
 
 		mvc.perform(post("/api/boards/999999/replies").contentType(MediaType.APPLICATION_JSON)
 						.content(json("익명", PASS, "고아")))
@@ -119,8 +119,8 @@ class BoardControllerTests {
 		write("/api/boards", "old");
 		write("/api/boards", "new");
 		mvc.perform(get("/api/boards"))
-				.andExpect(jsonPath("$[0].board_subject").value("new"))
-				.andExpect(jsonPath("$[1].board_subject").value("old"));
+				.andExpect(jsonPath("$.items[0].board_subject").value("new"))
+				.andExpect(jsonPath("$.items[1].board_subject").value("old"));
 	}
 
 	@Test
@@ -170,7 +170,7 @@ class BoardControllerTests {
 		mvc.perform(get(url)).andExpect(jsonPath("$.board_readcount").value(1));
 		mvc.perform(get(url)).andExpect(jsonPath("$.board_readcount").value(2));
 		// 목록 조회는 조회수를 올리지 않는다
-		mvc.perform(get("/api/boards")).andExpect(jsonPath("$[0].board_readcount").value(2));
+		mvc.perform(get("/api/boards")).andExpect(jsonPath("$.items[0].board_readcount").value(2));
 	}
 
 	@Test
@@ -214,8 +214,8 @@ class BoardControllerTests {
 				.andExpect(status().isNoContent());
 
 		mvc.perform(get("/api/boards"))
-				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].board_num").value(keep));
+				.andExpect(jsonPath("$.items.length()").value(1))
+				.andExpect(jsonPath("$.items[0].board_num").value(keep));
 		Assertions.assertNotNull(boardRepository.findById(gone).orElseThrow().getDeletedAt());
 		Assertions.assertNull(boardRepository.findById(keep).orElseThrow().getDeletedAt());
 	}

@@ -146,8 +146,8 @@ class AdminApiTests {
 		mvc.perform(post("/api/admin/boards/" + root + "/restore").header("Authorization", adminAuth))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.board_num").value(root));
-		mvc.perform(get("/api/boards")).andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].board_num").value(root));
+		mvc.perform(get("/api/boards")).andExpect(jsonPath("$.items.length()").value(1))
+				.andExpect(jsonPath("$.items[0].board_num").value(root));
 		mvc.perform(get("/api/admin/boards/deleted").header("Authorization", adminAuth))
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].board_num").value(reply))
@@ -184,6 +184,6 @@ class AdminApiTests {
 		mvc.perform(delete("/api/boards/" + memberPost).header("Authorization", adminAuth)).andExpect(status().isNoContent());
 		mvc.perform(delete("/api/boards/" + guestPost).header("Authorization", adminAuth)).andExpect(status().isNoContent());
 		Assertions.assertEquals(2, boardRepository.count());
-		mvc.perform(get("/api/boards")).andExpect(jsonPath("$.length()").value(0));
+		mvc.perform(get("/api/boards")).andExpect(jsonPath("$.items.length()").value(0));
 	}
 }

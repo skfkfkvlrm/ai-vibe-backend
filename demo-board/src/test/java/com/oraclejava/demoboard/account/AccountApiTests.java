@@ -180,7 +180,7 @@ class AccountApiTests {
 		mvc.perform(get("/api/auth/me").header("Authorization", userAuth)).andExpect(status().isUnauthorized());
 		mvc.perform(body(post("/api/auth/login"), "{\"login_id\":\"user_01\",\"password\":\"" + PASS + "\"}", null))
 				.andExpect(status().isUnauthorized());
-		mvc.perform(get("/api/boards")).andExpect(jsonPath("$[0].board_name").value("탈퇴한 회원"));
+		mvc.perform(get("/api/boards")).andExpect(jsonPath("$.items[0].board_name").value("탈퇴한 회원"));
 
 		// 아이디·이메일이 비워져 재가입할 수 있다.
 		mvc.perform(body(post("/api/auth/signup"), signupJson("user_01", "user@example.com"), null))

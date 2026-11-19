@@ -1,9 +1,15 @@
 package com.oraclejava.demoboard.board;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -37,16 +43,44 @@ public class BoardService {
 		this.auditService = auditService;
 	}
 
-	public List<Board> findAll() {
-		return boardRepository.findAllByDeletedAtIsNullOrderByReRefDescReStepAsc().stream()
-				.map(BoardEntity::toBoard)
-				.toList();
+	/**
+	 * 원글 기준 한 페이지(최신 원글 먼저)와 그 원글들의 답글. query가 null이면 검색 없이 전체,
+	 * 있으면 원글 또는 그 답글이 조건에 맞는 원글만 돌려준다. 검색어는 대소문자를 무시하고 %·_ 는 글자 그대로 비교한다.
+	 */
+	public BoardPage findPage(int page, int size, SearchField field, String query) {
+		PageRequest pageable = PageRequest.of(page, size);
+		Page<BoardEntity> roots;
+		if (query == null) {
+			roots = boardRepository.findRoots(pageable);
+		} else {
+			String pattern = "%" + escapeLike(query.toLowerCase(Locale.ROOT)) + "%";
+			roots = field == SearchField.AUTHOR
+					? boardRepository.searchRootsByAuthor(pattern, pageable)
+					: boardRepository.searchRootsByTitleContent(pattern, pageable);
+		}
+
+		List<Long> rootIds = roots.getContent().stream().map(BoardEntity::getBoardNum).toList();
+		Map<Long, List<BoardEntity>> repliesByRoot = rootIds.isEmpty() ? Map.of()
+				: boardRepository.findRepliesOf(rootIds).stream()
+						.collect(Collectors.groupingBy(BoardEntity::getReRef));
+
+		List<Board> items = new ArrayList<>();
+		for (BoardEntity root : roots.getContent()) {
+			items.add(root.toBoard());
+			repliesByRoot.getOrDefault(root.getBoardNum(), List.of()).forEach(r -> items.add(r.toBoard()));
+		}
+		return new BoardPage(items, page, size, roots.getTotalElements(), roots.getTotalPages());
 	}
 
-	/** 단건 조회 시 조회수를 1 증가시키고, 증가된 값을 담아 반환한다. */
+	/** LIKE 비교에서 !, %, _ 를 이스케이프 문자 !로 감싸 글자 그대로 비교하게 한다. */
+	private static String escapeLike(String s) {
+		return s.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+	}
+
+	/** 단건 조회. count가 true이면 조회수를 1 올리고, 올린 값을 담아 반환한다. 삭제된 글은 404. */
 	@Transactional
-	public Board readAndCount(Long id) {
-		if (boardRepository.increaseReadcount(id) == 0) {
+	public Board read(Long id, boolean count) {
+		if (count && boardRepository.increaseReadcount(id) == 0) {
 			throw notFound(id);
 		}
 		return boardRepository.findByBoardNumAndDeletedAtIsNull(id).orElseThrow(() -> notFound(id)).toBoard();

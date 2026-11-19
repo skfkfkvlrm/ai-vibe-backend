@@ -1,8 +1,11 @@
 package com.oraclejava.demoboard.board;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -13,8 +16,42 @@ import jakarta.persistence.LockModeType;
 
 public interface BoardRepository extends JpaRepository<BoardEntity, Long> {
 
-	/** 삭제되지 않은 글만. 원글 그룹은 최신순, 그룹 안에서는 re_step 순(원글 아래에 답글). */
-	List<BoardEntity> findAllByDeletedAtIsNullOrderByReRefDescReStepAsc();
+	/** 검색 조건은 LIKE ... ESCAPE '!' 로 비교한다(와일드카드 이스케이프는 BoardService). */
+	String ROOT = "b.reLev = 0 and b.deletedAt is null";
+	// 본문(TEXT)은 CLOB로 매핑되어 lower()에 바로 넣을 수 없으므로 문자열로 cast한다.
+	String TITLE_CONTENT_OF_B = "(lower(b.boardSubject) like :p escape '!' "
+			+ "or lower(cast(b.boardContent as string)) like :p escape '!')";
+	String TITLE_CONTENT_OF_R = "(lower(r.boardSubject) like :p escape '!' "
+			+ "or lower(cast(r.boardContent as string)) like :p escape '!')";
+	String AUTHOR_OF_B = "lower(b.boardName) like :p escape '!'";
+	String AUTHOR_OF_R = "lower(r.boardName) like :p escape '!'";
+	/** 삭제되지 않은 답글 중 조건에 맞는 것이 있는 원글도 결과에 포함한다. */
+	String REPLY_EXISTS = "exists (select 1 from BoardEntity r where r.reRef = b.reRef and r.reLev > 0 "
+			+ "and r.deletedAt is null and ";
+
+	/** 삭제되지 않은 원글, 최신 원글 먼저. */
+	@Query(value = "select b from BoardEntity b where " + ROOT + " order by b.reRef desc",
+			countQuery = "select count(b) from BoardEntity b where " + ROOT)
+	Page<BoardEntity> findRoots(Pageable pageable);
+
+	/** 원글 또는 그 답글의 제목·내용에 검색어(pattern)가 있는 원글. */
+	@Query(value = "select b from BoardEntity b where " + ROOT + " and (" + TITLE_CONTENT_OF_B + " or "
+			+ REPLY_EXISTS + TITLE_CONTENT_OF_R + ")) order by b.reRef desc",
+			countQuery = "select count(b) from BoardEntity b where " + ROOT + " and (" + TITLE_CONTENT_OF_B + " or "
+					+ REPLY_EXISTS + TITLE_CONTENT_OF_R + "))")
+	Page<BoardEntity> searchRootsByTitleContent(@Param("p") String pattern, Pageable pageable);
+
+	/** 원글 또는 그 답글의 작성자명에 검색어(pattern)가 있는 원글. */
+	@Query(value = "select b from BoardEntity b where " + ROOT + " and (" + AUTHOR_OF_B + " or "
+			+ REPLY_EXISTS + AUTHOR_OF_R + ")) order by b.reRef desc",
+			countQuery = "select count(b) from BoardEntity b where " + ROOT + " and (" + AUTHOR_OF_B + " or "
+					+ REPLY_EXISTS + AUTHOR_OF_R + "))")
+	Page<BoardEntity> searchRootsByAuthor(@Param("p") String pattern, Pageable pageable);
+
+	/** 주어진 원글들의 삭제되지 않은 답글. 원글 최신순, 그룹 안에서는 re_step 순. */
+	@Query("select b from BoardEntity b where b.reRef in :roots and b.reLev > 0 and b.deletedAt is null "
+			+ "order by b.reRef desc, b.reStep asc")
+	List<BoardEntity> findRepliesOf(@Param("roots") Collection<Long> roots);
 
 	/** 회원이 쓴 삭제되지 않은 글·답글, 최신 글 먼저. */
 	List<BoardEntity> findAllByMemberIdAndDeletedAtIsNullOrderByBoardNumDesc(Long memberId);
