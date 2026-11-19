@@ -66,6 +66,10 @@ public class BoardEntity {
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
 
+	/** 작성한 회원의 ID. null이면 비회원 글(기존 글 포함)이며 글별 비밀번호로 관리한다. */
+	@Column(name = "member_id")
+	private Long memberId;
+
 	protected BoardEntity() {
 	}
 
@@ -94,17 +98,27 @@ public class BoardEntity {
 		this.reStep = reStep;
 	}
 
-	/** 요청의 모든 필드로 덮어쓴다 (PUT). 비밀번호는 바꾸지 않는다. */
-	public void apply(BoardRequest r) {
-		this.boardName = r.boardName();
+	/** 회원이 쓴 글로 지정한다. 작성자명은 회원 이름으로 고정한다. */
+	public void assignMember(Long memberId, String memberName) {
+		this.memberId = memberId;
+		this.boardName = memberName;
+	}
+
+	public boolean isOwnedByMember() {
+		return memberId != null;
+	}
+
+	/** 요청의 모든 필드로 덮어쓴다 (PUT). 비밀번호는 바꾸지 않는다. 회원 글은 작성자명을 바꾸지 않는다. */
+	public void apply(BoardRequest r, boolean allowNameChange) {
+		if (allowNameChange) this.boardName = r.boardName();
 		this.boardSubject = r.boardSubject();
 		this.boardContent = r.boardContent();
 		this.boardFile = r.boardFile();
 	}
 
-	/** 요청에서 null이 아닌 필드만 반영한다 (PATCH). 비밀번호는 바꾸지 않는다. */
-	public void applyNonNull(BoardRequest r) {
-		if (r.boardName() != null) this.boardName = r.boardName();
+	/** 요청에서 null이 아닌 필드만 반영한다 (PATCH). 비밀번호는 바꾸지 않는다. 회원 글은 작성자명을 바꾸지 않는다. */
+	public void applyNonNull(BoardRequest r, boolean allowNameChange) {
+		if (allowNameChange && r.boardName() != null) this.boardName = r.boardName();
 		if (r.boardSubject() != null) this.boardSubject = r.boardSubject();
 		if (r.boardContent() != null) this.boardContent = r.boardContent();
 		if (r.boardFile() != null) this.boardFile = r.boardFile();
@@ -117,7 +131,11 @@ public class BoardEntity {
 
 	public Board toBoard() {
 		return new Board(boardNum, boardName, boardSubject, boardContent, boardFile,
-				reRef, reLev, reStep, boardReadcount, boardDate);
+				reRef, reLev, reStep, boardReadcount, boardDate, memberId);
+	}
+
+	public Long getMemberId() {
+		return memberId;
 	}
 
 	public Long getBoardNum() {

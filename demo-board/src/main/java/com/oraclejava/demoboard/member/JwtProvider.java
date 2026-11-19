@@ -45,7 +45,7 @@ public class JwtProvider {
 	}
 
 	/** 만료 시간을 지정해 발급한다(테스트에서 만료 토큰을 만들 때도 사용). */
-	String issue(Long memberId, String role, Duration validFor) {
+	public String issue(Long memberId, String role, Duration validFor) {
 		Date now = new Date();
 		return Jwts.builder()
 				.subject(String.valueOf(memberId))
@@ -58,9 +58,15 @@ public class JwtProvider {
 
 	/** 서명·만료를 검증하고 회원 ID를 반환한다. 유효하지 않으면 {@link JwtException}. */
 	public Long parseMemberId(String token) {
+		return parse(token).memberId();
+	}
+
+	/** 서명·만료를 검증하고 회원 ID와 권한을 반환한다. 유효하지 않으면 {@link JwtException}. */
+	public JwtClaims parse(String token) {
 		Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
 		try {
-			return Long.valueOf(claims.getSubject());
+			String role = claims.get("role", String.class);
+			return new JwtClaims(Long.valueOf(claims.getSubject()), role != null ? role : MemberEntity.ROLE_USER);
 		} catch (NumberFormatException e) {
 			throw new JwtException("invalid subject", e);
 		}

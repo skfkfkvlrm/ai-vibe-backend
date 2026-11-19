@@ -46,6 +46,13 @@ public class MemberService {
 		return member;
 	}
 
+	/** 게시글 작성자명으로 쓸 회원 이름. 토큰은 유효하지만 회원이 없다면 401로 취급한다. */
+	public String requireName(Long memberId) {
+		return memberRepository.findById(memberId)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid token"))
+				.getName();
+	}
+
 	/** 토큰의 회원이 삭제되었다면 401로 취급한다. */
 	public MemberResponse findForToken(Long memberId) {
 		return memberRepository.findById(memberId)

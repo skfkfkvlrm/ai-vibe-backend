@@ -73,6 +73,10 @@ public class MemberEntity {
 		return password;
 	}
 
+	public String getName() {
+		return name;
+	}
+
 	public String getRole() {
 		return role;
 	}

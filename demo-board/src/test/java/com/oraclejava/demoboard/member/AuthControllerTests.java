@@ -1,5 +1,6 @@
 package com.oraclejava.demoboard.member;
 
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -16,6 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
 import com.jayway.jsonpath.JsonPath;
 
@@ -26,7 +28,7 @@ class AuthControllerTests {
 	private static final String PASS = "pw123456";
 
 	@Autowired
-	private AuthController authController;
+	private WebApplicationContext context;
 
 	@Autowired
 	private MemberRepository memberRepository;
@@ -39,7 +41,8 @@ class AuthControllerTests {
 	@BeforeEach
 	void setUp() {
 		memberRepository.deleteAll();
-		mvc = MockMvcBuilders.standaloneSetup(authController).build();
+		// /me의 토큰 검증은 보안 필터가 하므로 필터 체인을 포함해 검증한다.
+		mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
 	}
 
 	private static String signupJson(String loginId, String password, String name, String email) {

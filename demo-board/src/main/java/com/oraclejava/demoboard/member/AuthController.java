@@ -2,6 +2,7 @@ package com.oraclejava.demoboard.member;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.Principal;
 import java.util.regex.Pattern;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -10,12 +11,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import io.jsonwebtoken.JwtException;
+import com.oraclejava.demoboard.security.CurrentMember;
 
 /** 회원가입·로그인·내 정보. 게시판 API에는 아직 인증을 적용하지 않는다(이후 단계). */
 @RestController
@@ -27,7 +27,6 @@ public class AuthController {
 	private static final int MIN_PASSWORD = 8;
 	/** BCrypt는 72바이트까지만 비교하므로 그 이상은 받지 않는다. */
 	private static final int MAX_PASSWORD_BYTES = 72;
-	private static final String BEARER = "Bearer ";
 
 	private final MemberService memberService;
 	private final JwtProvider jwtProvider;
@@ -60,17 +59,14 @@ public class AuthController {
 		return new TokenResponse(jwtProvider.issue(member), "Bearer", jwtProvider.getExpiration().toSeconds());
 	}
 
+	/** 토큰 검증은 JwtAuthenticationFilter가 하고, 인증이 없으면 SecurityConfig가 401을 낸다. */
 	@GetMapping("/me")
-	public MemberResponse me(@RequestHeader(value = "Authorization", required = false) String authorization) {
-		if (authorization == null || !authorization.startsWith(BEARER)) {
+	public MemberResponse me(Principal principal) {
+		Long memberId = CurrentMember.idOf(principal);
+		if (memberId == null) {
 			throw unauthorized();
 		}
-		try {
-			Long memberId = jwtProvider.parseMemberId(authorization.substring(BEARER.length()).trim());
-			return memberService.findForToken(memberId);
-		} catch (JwtException | IllegalArgumentException e) {
-			throw unauthorized();
-		}
+		return memberService.findForToken(memberId);
 	}
 
 	private static void validateSignup(SignupRequest r) {

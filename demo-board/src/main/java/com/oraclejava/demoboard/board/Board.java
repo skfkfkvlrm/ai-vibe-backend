@@ -4,7 +4,10 @@ import java.time.LocalDateTime;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/** 게시글 API 응답 본문. 비밀번호(board_pass)는 절대 포함하지 않는다. */
+/**
+ * 게시글 API 응답 본문. 비밀번호(board_pass)는 절대 포함하지 않는다.
+ * member_id는 로그인 회원이 쓴 글이면 작성 회원의 ID, 비회원 글(기존 글 포함)이면 null이다.
+ */
 public record Board(
 		@JsonProperty("board_num") Long boardNum,
 		@JsonProperty("board_name") String boardName,
@@ -15,5 +18,6 @@ public record Board(
 		@JsonProperty("re_lev") Integer reLev,
 		@JsonProperty("re_step") Integer reStep,
 		@JsonProperty("board_readcount") Long boardReadcount,
-		@JsonProperty("board_date") LocalDateTime boardDate) {
+		@JsonProperty("board_date") LocalDateTime boardDate,
+		@JsonProperty("member_id") Long memberId) {
 }

@@ -2,6 +2,7 @@ package com.oraclejava.demoboard.board;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -9,16 +10,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Spring Data JPA 기반 게시판 서비스. 데이터는 MySQL board 테이블에 저장된다. */
+import com.oraclejava.demoboard.member.MemberService;
+
+/**
+ * Spring Data JPA 기반 게시판 서비스. 데이터는 MySQL board 테이블에 저장된다.
+ * 수정·삭제 권한: 회원 글은 작성 회원 본인만(비밀번호 불필요), 비회원 글(기존 글 포함)은 글별 비밀번호로 한다.
+ */
 @Service
 @Transactional(readOnly = true)
 public class BoardService {
 
 	private final BoardRepository boardRepository;
+	private final MemberService memberService;
 	private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-	public BoardService(BoardRepository boardRepository) {
+	public BoardService(BoardRepository boardRepository, MemberService memberService) {
 		this.boardRepository = boardRepository;
+		this.memberService = memberService;
 	}
 
 	public List<Board> findAll() {
@@ -36,11 +44,10 @@ public class BoardService {
 		return boardRepository.findByBoardNumAndDeletedAtIsNull(id).orElseThrow(() -> notFound(id)).toBoard();
 	}
 
-	/** 원글 작성. re_ref는 자신의 글 번호, re_lev와 re_step은 0이다. */
+	/** 원글 작성. re_ref는 자신의 글 번호, re_lev와 re_step은 0이다. memberId가 있으면 회원 글이다. */
 	@Transactional
-	public Board create(BoardRequest request) {
-		BoardEntity entity = new BoardEntity(request, passwordEncoder.encode(request.boardPass()),
-				LocalDateTime.now());
+	public Board create(BoardRequest request, Long memberId) {
+		BoardEntity entity = newEntity(request, memberId);
 		entity = boardRepository.saveAndFlush(entity);
 		entity.assignRoot();
 		return boardRepository.saveAndFlush(entity).toBoard();
@@ -48,7 +55,7 @@ public class BoardService {
 
 	/** 답글 작성. 부모 바로 아래에 들어가도록 같은 그룹의 뒤쪽 re_step을 민다. */
 	@Transactional
-	public Board reply(Long parentId, BoardRequest request) {
+	public Board reply(Long parentId, BoardRequest request, Long memberId) {
 		BoardEntity parent = boardRepository.findForUpdate(parentId).orElseThrow(() -> notFound(parentId));
 		Long ref = parent.getReRef();
 		int lev = parent.getReLev();
@@ -56,35 +63,67 @@ public class BoardService {
 
 		boardRepository.shiftSteps(ref, step);
 
-		BoardEntity entity = new BoardEntity(request, passwordEncoder.encode(request.boardPass()),
-				LocalDateTime.now());
+		BoardEntity entity = newEntity(request, memberId);
 		entity.placeAsReply(ref, lev + 1, step + 1);
 		return boardRepository.saveAndFlush(entity).toBoard();
 	}
 
 	@Transactional
-	public Board update(Long id, BoardRequest request) {
-		BoardEntity entity = findAndCheck(id, request.boardPass());
-		entity.apply(request);
+	public Board update(Long id, BoardRequest request, Long memberId) {
+		BoardEntity entity = findAndCheck(id, request.boardPass(), memberId);
+		boolean guestPost = !entity.isOwnedByMember();
+		if (guestPost && (request.boardName() == null || request.boardName().isBlank())) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "board_name is required");
+		}
+		entity.apply(request, guestPost);
 		return boardRepository.saveAndFlush(entity).toBoard();
 	}
 
 	@Transactional
-	public Board patch(Long id, BoardRequest request) {
-		BoardEntity entity = findAndCheck(id, request.boardPass());
-		entity.applyNonNull(request);
+	public Board patch(Long id, BoardRequest request, Long memberId) {
+		BoardEntity entity = findAndCheck(id, request.boardPass(), memberId);
+		entity.applyNonNull(request, !entity.isOwnedByMember());
 		return boardRepository.saveAndFlush(entity).toBoard();
 	}
 
 	@Transactional
-	public void delete(Long id, String pass) {
-		BoardEntity entity = findAndCheck(id, pass);
+	public void delete(Long id, String pass, Long memberId) {
+		BoardEntity entity = findAndCheck(id, pass, memberId);
 		// 행은 지우지 않고 삭제 시각만 기록한다(soft delete). 답글 행도 그대로 보존된다.
 		entity.markDeleted(LocalDateTime.now());
 	}
 
-	private BoardEntity findAndCheck(Long id, String pass) {
+	private BoardEntity newEntity(BoardRequest request, Long memberId) {
+		LocalDateTime now = LocalDateTime.now();
+		if (memberId == null) {
+			return new BoardEntity(request, passwordEncoder.encode(request.boardPass()), now);
+		}
+		String name = memberService.requireName(memberId);
+		// 회원 글은 비밀번호 경로를 쓰지 않는다. NOT NULL 컬럼을 채우기 위해 무작위 값의 해시를 저장한다.
+		BoardEntity entity = new BoardEntity(request, passwordEncoder.encode(UUID.randomUUID().toString()), now);
+		entity.assignMember(memberId, name);
+		return entity;
+	}
+
+	/**
+	 * 수정·삭제 권한 확인.
+	 * 회원 글: 비로그인 401, 다른 회원 403, 본인 통과(비밀번호는 보지 않는다).
+	 * 비회원 글: 로그인 여부와 무관하게 비밀번호가 없으면 400, 틀리면 403.
+	 */
+	private BoardEntity findAndCheck(Long id, String pass, Long memberId) {
 		BoardEntity entity = boardRepository.findByBoardNumAndDeletedAtIsNull(id).orElseThrow(() -> notFound(id));
+		if (entity.isOwnedByMember()) {
+			if (memberId == null) {
+				throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login required");
+			}
+			if (!entity.getMemberId().equals(memberId)) {
+				throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not the owner");
+			}
+			return entity;
+		}
+		if (pass == null || pass.isBlank()) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "board_pass is required");
+		}
 		if (!passwordEncoder.matches(pass, entity.getBoardPass())) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Password does not match");
 		}
