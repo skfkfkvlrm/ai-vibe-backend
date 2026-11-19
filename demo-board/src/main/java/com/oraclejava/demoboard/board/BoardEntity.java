@@ -129,6 +129,11 @@ public class BoardEntity {
 		this.deletedAt = now;
 	}
 
+	/** 삭제를 취소한다(관리자 복구). 이 글 한 건만 되살아난다. */
+	public void restore() {
+		this.deletedAt = null;
+	}
+
 	public Board toBoard() {
 		return new Board(boardNum, boardName, boardSubject, boardContent, boardFile,
 				reRef, reLev, reStep, boardReadcount, boardDate, memberId);
@@ -144,6 +149,22 @@ public class BoardEntity {
 
 	public String getBoardPass() {
 		return boardPass;
+	}
+
+	public String getBoardName() {
+		return boardName;
+	}
+
+	public String getBoardSubject() {
+		return boardSubject;
+	}
+
+	public String getBoardContent() {
+		return boardContent;
+	}
+
+	public LocalDateTime getBoardDate() {
+		return boardDate;
 	}
 
 	public LocalDateTime getDeletedAt() {

@@ -4,6 +4,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -21,6 +22,7 @@ import com.oraclejava.demoboard.member.JwtProvider;
  * 쿠키가 아닌 Bearer 토큰을 쓰므로 CSRF는 끈다.
  */
 @Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
 
 	@Bean

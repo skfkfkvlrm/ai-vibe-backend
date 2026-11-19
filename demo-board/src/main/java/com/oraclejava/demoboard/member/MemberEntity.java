@@ -18,6 +18,8 @@ import jakarta.persistence.UniqueConstraint;
 public class MemberEntity {
 
 	public static final String ROLE_USER = "USER";
+	/** 관리자. 가입으로는 만들 수 없고 DB에서 role을 직접 승격한다. */
+	public static final String ROLE_ADMIN = "ADMIN";
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -10,11 +10,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.oraclejava.demoboard.member.MemberAccess;
 import com.oraclejava.demoboard.member.MemberService;
 
 /**
  * Spring Data JPA 기반 게시판 서비스. 데이터는 MySQL board 테이블에 저장된다.
- * 수정·삭제 권한: 회원 글은 작성 회원 본인만(비밀번호 불필요), 비회원 글(기존 글 포함)은 글별 비밀번호로 한다.
+ * 수정·삭제 권한: 회원 글은 작성 회원 본인만(비밀번호 불필요), 비회원 글(기존 글 포함)은 글별 비밀번호로 하며,
+ * 관리자는 모든 글을 수정·삭제할 수 있다.
  */
 @Service
 @Transactional(readOnly = true)
@@ -22,11 +24,13 @@ public class BoardService {
 
 	private final BoardRepository boardRepository;
 	private final MemberService memberService;
+	private final MemberAccess memberAccess;
 	private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-	public BoardService(BoardRepository boardRepository, MemberService memberService) {
+	public BoardService(BoardRepository boardRepository, MemberService memberService, MemberAccess memberAccess) {
 		this.boardRepository = boardRepository;
 		this.memberService = memberService;
+		this.memberAccess = memberAccess;
 	}
 
 	public List<Board> findAll() {
@@ -70,25 +74,28 @@ public class BoardService {
 
 	@Transactional
 	public Board update(Long id, BoardRequest request, Long memberId) {
-		BoardEntity entity = findAndCheck(id, request.boardPass(), memberId);
-		boolean guestPost = !entity.isOwnedByMember();
-		if (guestPost && (request.boardName() == null || request.boardName().isBlank())) {
+		Checked checked = findAndCheck(id, request.boardPass(), memberId);
+		BoardEntity entity = checked.entity();
+		// 작성자명은 비회원 글을 비밀번호로 고칠 때만 바꿀 수 있다(회원 글·관리자 수정은 유지).
+		boolean nameChangeable = !entity.isOwnedByMember() && !checked.byAdmin();
+		if (nameChangeable && (request.boardName() == null || request.boardName().isBlank())) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "board_name is required");
 		}
-		entity.apply(request, guestPost);
+		entity.apply(request, nameChangeable);
 		return boardRepository.saveAndFlush(entity).toBoard();
 	}
 
 	@Transactional
 	public Board patch(Long id, BoardRequest request, Long memberId) {
-		BoardEntity entity = findAndCheck(id, request.boardPass(), memberId);
-		entity.applyNonNull(request, !entity.isOwnedByMember());
+		Checked checked = findAndCheck(id, request.boardPass(), memberId);
+		BoardEntity entity = checked.entity();
+		entity.applyNonNull(request, !entity.isOwnedByMember() && !checked.byAdmin());
 		return boardRepository.saveAndFlush(entity).toBoard();
 	}
 
 	@Transactional
 	public void delete(Long id, String pass, Long memberId) {
-		BoardEntity entity = findAndCheck(id, pass, memberId);
+		BoardEntity entity = findAndCheck(id, pass, memberId).entity();
 		// 행은 지우지 않고 삭제 시각만 기록한다(soft delete). 답글 행도 그대로 보존된다.
 		entity.markDeleted(LocalDateTime.now());
 	}
@@ -105,21 +112,30 @@ public class BoardService {
 		return entity;
 	}
 
+	/** 권한 확인을 통과한 글. byAdmin이면 관리자 권한으로 통과한 것이다(작성자명은 바꾸지 않는다). */
+	private record Checked(BoardEntity entity, boolean byAdmin) {
+	}
+
 	/**
 	 * 수정·삭제 권한 확인.
-	 * 회원 글: 비로그인 401, 다른 회원 403, 본인 통과(비밀번호는 보지 않는다).
-	 * 비회원 글: 로그인 여부와 무관하게 비밀번호가 없으면 400, 틀리면 403.
+	 * 1) 회원 글의 작성 회원 본인은 통과(DB 조회 없음).
+	 * 2) 로그인한 관리자(DB의 현재 role 기준)는 소유자·비밀번호와 무관하게 통과.
+	 * 3) 그 외 회원 글: 비로그인 401, 다른 회원 403.
+	 * 4) 비회원 글: 로그인 여부와 무관하게 비밀번호가 없으면 400, 틀리면 403.
 	 */
-	private BoardEntity findAndCheck(Long id, String pass, Long memberId) {
+	private Checked findAndCheck(Long id, String pass, Long memberId) {
 		BoardEntity entity = boardRepository.findByBoardNumAndDeletedAtIsNull(id).orElseThrow(() -> notFound(id));
+		if (entity.isOwnedByMember() && entity.getMemberId().equals(memberId)) {
+			return new Checked(entity, false);
+		}
+		if (memberId != null && memberAccess.isAdmin(memberId)) {
+			return new Checked(entity, true);
+		}
 		if (entity.isOwnedByMember()) {
 			if (memberId == null) {
 				throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login required");
 			}
-			if (!entity.getMemberId().equals(memberId)) {
-				throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not the owner");
-			}
-			return entity;
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not the owner");
 		}
 		if (pass == null || pass.isBlank()) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "board_pass is required");
@@ -127,7 +143,7 @@ public class BoardService {
 		if (!passwordEncoder.matches(pass, entity.getBoardPass())) {
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Password does not match");
 		}
-		return entity;
+		return new Checked(entity, false);
 	}
 
 	private static ResponseStatusException notFound(Long id) {

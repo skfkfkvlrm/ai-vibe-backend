@@ -16,6 +16,9 @@ public interface BoardRepository extends JpaRepository<BoardEntity, Long> {
 	/** 삭제되지 않은 글만. 원글 그룹은 최신순, 그룹 안에서는 re_step 순(원글 아래에 답글). */
 	List<BoardEntity> findAllByDeletedAtIsNullOrderByReRefDescReStepAsc();
 
+	/** 관리자용: 삭제된 글·답글을 삭제 시각 역순으로. */
+	List<BoardEntity> findAllByDeletedAtIsNotNullOrderByDeletedAtDesc();
+
 	/** 삭제되지 않은 글 한 건. 삭제된 글은 없는 글로 취급한다. */
 	Optional<BoardEntity> findByBoardNumAndDeletedAtIsNull(Long boardNum);
 
