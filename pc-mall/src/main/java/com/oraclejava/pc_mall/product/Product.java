@@ -9,9 +9,15 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
+// 삭제는 soft delete: DELETE 대신 deleted_at을 채우고, 조회에서는 deleted_at이 있는 행을 제외한다.
 @Entity
 @Table(name = "product")
+@SQLDelete(sql = "UPDATE product SET deleted_at = NOW() WHERE id = ?")
+@SQLRestriction("deleted_at IS NULL")
 public class Product {
 
 	@Id
@@ -39,6 +45,9 @@ public class Product {
 	@Basic(fetch = FetchType.LAZY)
 	@Column(name = "pic_l", columnDefinition = "MEDIUMBLOB")
 	private byte[] picL;
+
+	@Column(name = "deleted_at")
+	private LocalDateTime deletedAt;
 
 	protected Product() {
 	}

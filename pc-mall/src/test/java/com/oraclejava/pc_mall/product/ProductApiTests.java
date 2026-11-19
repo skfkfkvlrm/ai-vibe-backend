@@ -1,5 +1,6 @@
 package com.oraclejava.pc_mall.product;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -88,6 +89,27 @@ class ProductApiTests {
 	void jsonInvalidBase64Returns400() throws Exception {
 		mvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON)
 				.content(json(",\"pic_s\":\"@@not-base64@@\""))).andExpect(status().isBadRequest());
+	}
+
+	@Autowired
+	jakarta.persistence.EntityManager em;
+
+	@Test
+	void deleteIsSoftDeleteHiddenFromReadsButRowKept() throws Exception {
+		String body = mvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON).content(json("")))
+				.andReturn().getResponse().getContentAsString();
+		String id = body.replaceAll(".*\"id\":(\\d+).*", "$1");
+
+		mvc.perform(delete("/api/products/" + id)).andExpect(status().isNoContent());
+		em.flush();
+		em.clear();
+
+		mvc.perform(get("/api/products/" + id)).andExpect(status().isNotFound());
+		mvc.perform(get("/api/products")).andExpect(jsonPath("$[?(@.id==" + id + ")]").isEmpty());
+		mvc.perform(delete("/api/products/" + id)).andExpect(status().isNotFound());
+		Object deletedAt = em.createNativeQuery("select deleted_at from product where id = ?1")
+				.setParameter(1, Long.parseLong(id)).getSingleResult();
+		org.junit.jupiter.api.Assertions.assertNotNull(deletedAt, "행은 남고 deleted_at이 채워져야 한다");
 	}
 
 	@Test
