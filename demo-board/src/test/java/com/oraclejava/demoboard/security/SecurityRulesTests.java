@@ -1,7 +1,9 @@
 package com.oraclejava.demoboard.security;
 
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -78,5 +80,78 @@ class SecurityRulesTests {
 			mvc.perform(get("/api/boards").header("Authorization", bad)).andExpect(status().isOk());
 			mvc.perform(get("/api/auth/me").header("Authorization", bad)).andExpect(status().isUnauthorized());
 		}
+	}
+
+	private static final String GUEST_BODY = "{\"board_name\":\"손님\",\"board_pass\":\"pw1234\",\"board_subject\":\"제목\"}";
+
+	/** F-1 T1: 만료·위조·형식 오류 토큰이 붙은 쓰기 요청은 401(비회원 글도 막는다). */
+	@Test
+	void invalidTokenOnWriteIsUnauthorized() throws Exception {
+		String expired = jwtProvider.issue(member.getMemberId(), "USER", Duration.ofSeconds(-60));
+		for (String bad : new String[] { "Bearer not.a.jwt", "Bearer " + expired }) {
+			mvc.perform(post("/api/boards").header("Authorization", bad).contentType(MediaType.APPLICATION_JSON)
+							.content(GUEST_BODY))
+					.andExpect(status().isUnauthorized());
+			mvc.perform(post("/api/boards/1/replies").header("Authorization", bad)
+							.contentType(MediaType.APPLICATION_JSON).content(GUEST_BODY))
+					.andExpect(status().isUnauthorized());
+		}
+	}
+
+	/** F-1 T2: 비밀번호 변경(버전 변경)·탈퇴 이후의 토큰으로 쓰기·수정·삭제는 401. */
+	@Test
+	void staleVersionOrWithdrawnTokenOnWriteIsUnauthorized() throws Exception {
+		String token = jwtProvider.issue(member);
+		memberService.changePassword(member.getMemberId(), "pw123456", "newpass1234");
+		assertUnauthorizedWrites(token);
+
+		memberService.signup("user_02", "pw123456", "회원2", "user2@example.com");
+		MemberEntity second = memberRepository.findByLoginId("user_02").orElseThrow();
+		String token2 = jwtProvider.issue(second);
+		memberService.withdraw(second.getMemberId(), "pw123456");
+		assertUnauthorizedWrites(token2);
+	}
+
+	private void assertUnauthorizedWrites(String token) throws Exception {
+		String auth = "Bearer " + token;
+		mvc.perform(post("/api/boards").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"board_subject\":\"제목\"}"))
+				.andExpect(status().isUnauthorized());
+		mvc.perform(patch("/api/boards/1").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"board_subject\":\"제목\"}"))
+				.andExpect(status().isUnauthorized());
+		mvc.perform(delete("/api/boards/1").header("Authorization", auth)).andExpect(status().isUnauthorized());
+	}
+
+	/** F-1 T3: 로그인·가입은 무효 토큰이 남아 있어도 막지 않는다(다시 로그인할 수 있어야 한다). */
+	@Test
+	void authEndpointsIgnoreInvalidToken() throws Exception {
+		String expired = "Bearer " + jwtProvider.issue(member.getMemberId(), "USER", Duration.ofSeconds(-60));
+		mvc.perform(post("/api/auth/login").header("Authorization", expired).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"login_id\":\"user_01\",\"password\":\"pw123456\"}"))
+				.andExpect(status().isOk());
+		mvc.perform(post("/api/auth/login").header("Authorization", expired).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"login_id\":\"user_01\",\"password\":\"wrong-pass\"}"))
+				.andExpect(status().isUnauthorized());
+		mvc.perform(post("/api/auth/signup").header("Authorization", expired).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"login_id\":\"user_03\",\"password\":\"pw123456\",\"name\":\"회원3\",\"email\":\"user3@example.com\"}"))
+				.andExpect(status().isCreated());
+	}
+
+	/** F-1 T4·T5: 토큰 없는 비회원 쓰기와 `Bearer`가 아닌 헤더는 기존대로 통과, 밴 회원은 기존대로 403. */
+	@Test
+	void validAndAnonymousWritesKeepWorking() throws Exception {
+		mvc.perform(post("/api/boards").contentType(MediaType.APPLICATION_JSON).content(GUEST_BODY))
+				.andExpect(status().isCreated());
+		mvc.perform(post("/api/boards").header("Authorization", "Basic abc").contentType(MediaType.APPLICATION_JSON)
+						.content(GUEST_BODY))
+				.andExpect(status().isCreated());
+
+		String token = jwtProvider.issue(member);
+		member.ban("테스트", java.time.LocalDateTime.now(), null);
+		memberRepository.save(member);
+		mvc.perform(post("/api/boards").header("Authorization", "Bearer " + token)
+						.contentType(MediaType.APPLICATION_JSON).content("{\"board_subject\":\"제목\"}"))
+				.andExpect(status().isForbidden());
 	}
 }

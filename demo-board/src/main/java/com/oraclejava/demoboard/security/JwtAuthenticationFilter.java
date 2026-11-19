@@ -27,7 +27,8 @@ import jakarta.servlet.http.HttpServletResponse;
  * Authorization: Bearer 토큰을 검증하고, 인증된 요청마다 DB에서 회원의 현재 상태를 확인한다.
  * <ul>
  * <li>서명·만료가 틀렸거나, 회원이 없거나 탈퇴했거나, 토큰 버전(ver)이 달라졌으면(비밀번호 변경·초기화 이후)
- * 오류를 내지 않고 비로그인으로 취급한다(공개 API는 그대로 동작해야 하므로).</li>
+ * 무효 토큰이다. 조회 등은 오류 없이 비로그인으로 취급하지만(공개 API는 그대로 동작해야 하므로),
+ * 쓰기 요청(POST/PUT/PATCH/DELETE, 로그인·가입 제외)은 401로 만료를 알린다.</li>
  * <li>밴 중인 회원은 공개 조회(GET /api/boards...)만 비로그인으로 통과시키고, 그 외 요청은 즉시 403(BANNED)이다.</li>
  * </ul>
  * 빈으로 등록하지 않고 SecurityConfig에서만 생성해 서블릿 필터로 중복 등록되지 않게 한다.
@@ -49,10 +50,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 			throws ServletException, IOException {
 		String header = request.getHeader("Authorization");
 		if (header != null && header.startsWith(BEARER)) {
+			boolean valid = false;
 			try {
 				JwtClaims claims = jwtProvider.parse(header.substring(BEARER.length()).trim());
 				MemberEntity member = memberRepository.findById(claims.memberId()).orElse(null);
 				if (member != null && !member.isWithdrawn() && member.getTokenVersion() == claims.version()) {
+					valid = true;
 					if (member.isBanned(LocalDateTime.now())) {
 						if (!isPublicRead(request)) {
 							writeBanned(response, member);
@@ -67,10 +70,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 					}
 				}
 			} catch (JwtException | IllegalArgumentException e) {
-				// 무효 토큰: 로그인하지 않은 요청으로 계속 진행한다.
+				// 무효 토큰: 아래에서 쓰기 요청이면 401, 그 외에는 비로그인으로 계속 진행한다.
+			}
+			if (!valid && isGuardedWrite(request)) {
+				response.setStatus(HttpStatus.UNAUTHORIZED.value());
+				return;
 			}
 		}
 		chain.doFilter(request, response);
+	}
+
+	/**
+	 * 무효 토큰을 401로 돌려줄 쓰기 요청인가. 쓰기 API가 비회원에게 열려 있어도, 토큰을 들고 온 쪽은 로그인 상태로 보낸
+	 * 요청이라 조용히 비회원 취급하면 400 등으로 어긋나므로 만료를 알려준다. 로그인·가입은 만료 토큰이 남은 사용자도
+	 * 다시 들어올 수 있어야 하므로 제외한다.
+	 */
+	private static boolean isGuardedWrite(HttpServletRequest request) {
+		String method = request.getMethod();
+		boolean write = "POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method)
+				|| "DELETE".equals(method);
+		String uri = request.getRequestURI();
+		return write && !"/api/auth/login".equals(uri) && !"/api/auth/signup".equals(uri);
 	}
 
 	private static boolean isPublicRead(HttpServletRequest request) {
