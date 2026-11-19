@@ -58,11 +58,13 @@ public class ProductService {
 		return requirePic(get(id).getPicL());
 	}
 
+	@Transactional
 	public ProductResponse update(Long id, String name, int price, String kind, String text,
 			MultipartFile picS, MultipartFile picL) {
 		return update(id, name, price, kind, text, toBytes(picS), toBytes(picL));
 	}
 
+	@Transactional
 	public ProductResponse update(Long id, ProductRequest req) {
 		return update(id, req.name(), req.price(), req.kind(), req.text(), decode(req.picS()), decode(req.picL()));
 	}
