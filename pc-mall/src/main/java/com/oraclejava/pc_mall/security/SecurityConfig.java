@@ -16,7 +16,8 @@ import com.oraclejava.pc_mall.member.MemberRepository;
 /**
  * 무상태 JWT 보안 설정.
  * <ul>
- * <li>공개: 회원가입·로그인, 상품 API 전체(이번 단계에서는 보호하지 않음), 헬스 체크, /error</li>
+ * <li>공개: 회원가입·로그인, 상품 조회(GET), 헬스 체크, /error</li>
+ * <li>상품 쓰기(POST·PUT·DELETE)는 ADMIN 전용</li>
  * <li>그 외 모든 경로는 로그인 필요(/api/auth/me 포함)</li>
  * </ul>
  * 쿠키가 아닌 Bearer 토큰을 쓰므로 CSRF는 끈다.
@@ -35,7 +36,9 @@ public class SecurityConfig {
 				.logout(logout -> logout.disable())
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login").permitAll()
-						.requestMatchers("/api/products", "/api/products/**").permitAll()
+						// 상품 조회는 공개, 쓰기(등록·수정·삭제)는 ADMIN 전용이다. 비로그인은 401, 일반 회원은 403.
+						.requestMatchers(HttpMethod.GET, "/api/products", "/api/products/**").permitAll()
+						.requestMatchers("/api/products", "/api/products/**").hasRole("ADMIN")
 						// application.properties의 management.endpoints.web.base-path=/ 이므로 헬스는 /health 이다.
 						.requestMatchers("/health", "/health/**", "/actuator/health", "/actuator/health/**", "/livez",
 								"/readyz")

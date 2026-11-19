@@ -111,13 +111,13 @@ class AuthApiTests {
 				.andExpect(status().isUnauthorized());
 	}
 
-	/** T5: 토큰 없이 상품 조회·등록은 기존대로 공개. 만료 토큰이 붙은 조회도 공개로 동작한다. */
+	/** T5: 토큰 없이 상품 조회는 공개, 등록은 401(쓰기는 ADMIN 전용). 무효 토큰이 붙은 조회도 공개로 동작한다. */
 	@Test
-	void productApiStaysPublic() throws Exception {
+	void productReadsStayPublicWritesNeedLogin() throws Exception {
 		mvc.perform(get("/health")).andExpect(status().isOk());
 		mvc.perform(get("/api/products")).andExpect(status().isOk());
 		mvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"name\":\"QA\",\"price\":1,\"kind\":\"laptop\"}")).andExpect(status().isCreated());
+				.content("{\"name\":\"QA\",\"price\":1,\"kind\":\"laptop\"}")).andExpect(status().isUnauthorized());
 		mvc.perform(get("/api/products").header("Authorization", "Bearer invalid.token.value"))
 				.andExpect(status().isOk());
 	}
