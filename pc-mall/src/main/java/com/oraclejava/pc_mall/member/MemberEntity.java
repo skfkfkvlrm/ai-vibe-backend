@@ -88,6 +88,28 @@ public class MemberEntity {
 		this.banReason = reason;
 	}
 
+	/** 밴을 풀고 사유·기간을 지운다. */
+	public void unban() {
+		this.bannedAt = null;
+		this.bannedUntil = null;
+		this.banReason = null;
+	}
+
+	/** 영구 밴인가. 기간 밴은 false. */
+	public boolean isBannedPermanently(LocalDateTime now) {
+		return isBanned(now) && bannedUntil == null;
+	}
+
+	/** 관리자 화면용 상태: BANNED 또는 ACTIVE(기간 밴이 지났으면 ACTIVE). */
+	public String status(LocalDateTime now) {
+		return isBanned(now) ? "BANNED" : "ACTIVE";
+	}
+
+	/** 역할을 바꾼다. 허용 값(USER·ADMIN) 검증은 호출한 서비스가 한다. */
+	public void changeRole(String newRole) {
+		this.role = newRole;
+	}
+
 	/** 비밀번호를 바꾸고 기존 로그인을 모두 무효화한다. */
 	public void changePassword(String passwordHash) {
 		this.password = passwordHash;
@@ -102,6 +124,18 @@ public class MemberEntity {
 
 	public String getEmail() {
 		return email;
+	}
+
+	public String getLoginId() {
+		return loginId;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public LocalDateTime getCreatedAt() {
+		return createdAt;
 	}
 
 	public Long getMemberId() {
