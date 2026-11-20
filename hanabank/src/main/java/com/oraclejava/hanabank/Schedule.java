@@ -22,6 +22,10 @@ public class Schedule {
 
     protected Schedule() {}
 
+    public void change(LocalDate gdate, String game, String team) {
+        this.gdate = gdate; this.game = game; this.team = team;
+    }
+
     public Schedule(Long id, LocalDate gdate, String game, String team) {
         this.id = id; this.gdate = gdate; this.game = game; this.team = team;
     }
