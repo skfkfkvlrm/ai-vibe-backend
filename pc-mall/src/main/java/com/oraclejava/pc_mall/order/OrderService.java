@@ -1,7 +1,13 @@
 package com.oraclejava.pc_mall.order;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -16,13 +22,17 @@ import com.oraclejava.pc_mall.member.MemberRules;
 public class OrderService {
 
 	private static final int MAX_MSG = 500;
+	private static final int MAX_REASON = 200;
 
 	private final OrderRepository orders;
+	private final OrderCancelRepository cancels;
 	private final MemberRepository members;
 	private final CartService cartService;
 
-	public OrderService(OrderRepository orders, MemberRepository members, CartService cartService) {
+	public OrderService(OrderRepository orders, OrderCancelRepository cancels, MemberRepository members,
+			CartService cartService) {
 		this.orders = orders;
+		this.cancels = cancels;
 		this.members = members;
 		this.cartService = cartService;
 	}
@@ -59,14 +69,112 @@ public class OrderService {
 		return OrderResponse.from(order);
 	}
 
+	/** 주문 줄 단위 부분/전체 취소 및 모의 환불. */
+	@Transactional
+	public OrderResponse cancel(Long memberId, Long id, CancelRequest req) {
+		var order = orders.findForCancelByIdAndCustomerMemberId(id, memberId)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "order not found"));
+		if (Order.STATUS_CANCELED.equals(order.getStatus())) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "already canceled");
+		}
+		boolean paid = Order.STATUS_PAID.equals(order.getStatus())
+				|| Order.STATUS_PARTIALLY_CANCELED.equals(order.getStatus());
+		if (!paid && !Order.STATUS_ORDERED.equals(order.getStatus())) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "cannot cancel order");
+		}
+		if (req == null) {
+			throw bad("cancel request is required");
+		}
+		String reason = req.reason() == null ? "" : req.reason().trim();
+		if (reason.isEmpty()) {
+			throw bad("reason is required");
+		}
+		if (reason.length() > MAX_REASON) {
+			throw bad("reason too long");
+		}
+		if (req.items() == null || req.items().isEmpty()) {
+			throw bad("items are required");
+		}
+
+		Map<Long, OrderLine> lineMap = order.getLines().stream()
+				.collect(Collectors.toMap(OrderLine::getId, Function.identity()));
+		List<OrderCancel> existing = cancels.findByOrderId(order.getId());
+		Map<Long, Integer> canceledByLine = new HashMap<>();
+		int refundedTotal = 0;
+		for (OrderCancel c : existing) {
+			canceledByLine.merge(c.getOrderLine().getId(), c.getQuantity(), Integer::sum);
+			refundedTotal += c.getRefundAmount();
+		}
+
+		Set<Long> seen = new HashSet<>();
+		for (CancelRequest.Item item : req.items()) {
+			if (item == null || item.lineId() == null) {
+				throw bad("lineId is required");
+			}
+			if (!seen.add(item.lineId())) {
+				throw bad("duplicate lineId");
+			}
+			OrderLine line = lineMap.get(item.lineId());
+			if (line == null) {
+				throw bad("order line not found");
+			}
+			int remaining = line.getQuantity() - canceledByLine.getOrDefault(line.getId(), 0);
+			if (item.quantity() < 1 || item.quantity() > remaining) {
+				throw bad("invalid cancel quantity");
+			}
+		}
+
+		LocalDateTime now = LocalDateTime.now();
+		for (CancelRequest.Item item : req.items()) {
+			OrderLine line = lineMap.get(item.lineId());
+			int unitPrice = (paid && line.getProduct() != null) ? line.getProduct().getPrice() : 0;
+			int refund = unitPrice * item.quantity();
+			cancels.save(new OrderCancel(order, line, item.quantity(), refund, reason, now));
+			canceledByLine.merge(line.getId(), item.quantity(), Integer::sum);
+			refundedTotal += refund;
+		}
+
+		boolean allCanceled = order.getLines().stream()
+				.allMatch(l -> canceledByLine.getOrDefault(l.getId(), 0) >= l.getQuantity());
+		if (allCanceled) {
+			order.markCanceled();
+		} else if (paid) {
+			order.markPartiallyCanceled();
+		}
+		return OrderResponse.from(order, canceledByLine, refundedTotal);
+	}
+
 	@Transactional(readOnly = true)
 	public List<OrderResponse> list(Long memberId) {
-		return orders.findByCustomerMemberIdOrderByIdDesc(memberId).stream().map(OrderResponse::from).toList();
+		List<Order> list = orders.findByCustomerMemberIdOrderByIdDesc(memberId);
+		if (list.isEmpty()) {
+			return List.of();
+		}
+		List<Long> orderIds = list.stream().map(Order::getId).toList();
+		Map<Long, Map<Long, Integer>> canceledByOrder = new HashMap<>();
+		Map<Long, Integer> refundedByOrder = new HashMap<>();
+		for (OrderCancel c : cancels.findByOrderIdIn(orderIds)) {
+			Long oid = c.getOrder().getId();
+			canceledByOrder.computeIfAbsent(oid, k -> new HashMap<>())
+					.merge(c.getOrderLine().getId(), c.getQuantity(), Integer::sum);
+			refundedByOrder.merge(oid, c.getRefundAmount(), Integer::sum);
+		}
+		return list.stream()
+				.map(o -> OrderResponse.from(o, canceledByOrder.getOrDefault(o.getId(), Map.of()),
+						refundedByOrder.getOrDefault(o.getId(), 0)))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public OrderResponse get(Long memberId, Long id) {
-		return OrderResponse.from(find(memberId, id));
+		var order = find(memberId, id);
+		Map<Long, Integer> canceledByLine = new HashMap<>();
+		int refundedTotal = 0;
+		for (OrderCancel c : cancels.findByOrderId(order.getId())) {
+			canceledByLine.merge(c.getOrderLine().getId(), c.getQuantity(), Integer::sum);
+			refundedTotal += c.getRefundAmount();
+		}
+		return OrderResponse.from(order, canceledByLine, refundedTotal);
 	}
 
 	private Order find(Long memberId, Long id) {

@@ -26,6 +26,10 @@ public class Order {
 	public static final String STATUS_ORDERED = "ORDERED";
 	/** 모의 결제 완료. 실제 PG 연동은 없다. */
 	public static final String STATUS_PAID = "PAID";
+	/** 결제된 주문의 일부 수량 취소. */
+	public static final String STATUS_PARTIALLY_CANCELED = "PARTIALLY_CANCELED";
+	/** 주문 전체 취소. */
+	public static final String STATUS_CANCELED = "CANCELED";
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -74,8 +78,19 @@ public class Order {
 		totalPrice += line.getProduct().getPrice() * line.getQuantity();
 	}
 
+	/** 결제 대기(ORDERED)일 때만 PAID로 바꾼다. 취소된 주문이 되살아나지 않게 한다. */
 	public void markPaid() {
-		this.status = STATUS_PAID;
+		if (STATUS_ORDERED.equals(status)) {
+			this.status = STATUS_PAID;
+		}
+	}
+
+	public void markPartiallyCanceled() {
+		this.status = STATUS_PARTIALLY_CANCELED;
+	}
+
+	public void markCanceled() {
+		this.status = STATUS_CANCELED;
 	}
 
 	public Long getId() {

@@ -48,6 +48,12 @@ public class OrderController {
 		return service.pay(member(principal), id);
 	}
 
+	/** 주문 부분/전체 취소(모의 환불). */
+	@PostMapping("/{id}/cancel")
+	public OrderResponse cancel(@PathVariable Long id, @RequestBody CancelRequest request, Principal principal) {
+		return service.cancel(member(principal), id, request);
+	}
+
 	private static Long member(Principal principal) {
 		Long id = CurrentMember.idOf(principal);
 		if (id == null) {
