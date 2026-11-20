@@ -1,6 +1,7 @@
 package com.oraclejava.pc_mall.order;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -66,7 +67,7 @@ public class OrderService {
 	public OrderResponse pay(Long memberId, Long id) {
 		var order = find(memberId, id);
 		order.markPaid();
-		return OrderResponse.from(order);
+		return OrderResponse.from(order, cancels.findByOrderId(order.getId()));
 	}
 
 	/** 주문 줄 단위 부분/전체 취소 및 모의 환불. */
@@ -100,10 +101,8 @@ public class OrderService {
 				.collect(Collectors.toMap(OrderLine::getId, Function.identity()));
 		List<OrderCancel> existing = cancels.findByOrderId(order.getId());
 		Map<Long, Integer> canceledByLine = new HashMap<>();
-		int refundedTotal = 0;
 		for (OrderCancel c : existing) {
 			canceledByLine.merge(c.getOrderLine().getId(), c.getQuantity(), Integer::sum);
-			refundedTotal += c.getRefundAmount();
 		}
 
 		Set<Long> seen = new HashSet<>();
@@ -124,14 +123,14 @@ public class OrderService {
 			}
 		}
 
+		List<OrderCancel> allCancels = new ArrayList<>(existing);
 		LocalDateTime now = LocalDateTime.now();
 		for (CancelRequest.Item item : req.items()) {
 			OrderLine line = lineMap.get(item.lineId());
-			int unitPrice = (paid && line.getProduct() != null) ? line.getProduct().getPrice() : 0;
+			int unitPrice = paid ? line.getUnitPrice() : 0;
 			int refund = unitPrice * item.quantity();
-			cancels.save(new OrderCancel(order, line, item.quantity(), refund, reason, now));
+			allCancels.add(cancels.save(new OrderCancel(order, line, item.quantity(), refund, reason, now)));
 			canceledByLine.merge(line.getId(), item.quantity(), Integer::sum);
-			refundedTotal += refund;
 		}
 
 		boolean allCanceled = order.getLines().stream()
@@ -141,7 +140,7 @@ public class OrderService {
 		} else if (paid) {
 			order.markPartiallyCanceled();
 		}
-		return OrderResponse.from(order, canceledByLine, refundedTotal);
+		return OrderResponse.from(order, allCancels);
 	}
 
 	@Transactional(readOnly = true)
@@ -151,30 +150,17 @@ public class OrderService {
 			return List.of();
 		}
 		List<Long> orderIds = list.stream().map(Order::getId).toList();
-		Map<Long, Map<Long, Integer>> canceledByOrder = new HashMap<>();
-		Map<Long, Integer> refundedByOrder = new HashMap<>();
-		for (OrderCancel c : cancels.findByOrderIdIn(orderIds)) {
-			Long oid = c.getOrder().getId();
-			canceledByOrder.computeIfAbsent(oid, k -> new HashMap<>())
-					.merge(c.getOrderLine().getId(), c.getQuantity(), Integer::sum);
-			refundedByOrder.merge(oid, c.getRefundAmount(), Integer::sum);
-		}
+		Map<Long, List<OrderCancel>> cancelsByOrder = cancels.findByOrderIdIn(orderIds).stream()
+				.collect(Collectors.groupingBy(c -> c.getOrder().getId()));
 		return list.stream()
-				.map(o -> OrderResponse.from(o, canceledByOrder.getOrDefault(o.getId(), Map.of()),
-						refundedByOrder.getOrDefault(o.getId(), 0)))
+				.map(o -> OrderResponse.from(o, cancelsByOrder.getOrDefault(o.getId(), List.of())))
 				.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public OrderResponse get(Long memberId, Long id) {
 		var order = find(memberId, id);
-		Map<Long, Integer> canceledByLine = new HashMap<>();
-		int refundedTotal = 0;
-		for (OrderCancel c : cancels.findByOrderId(order.getId())) {
-			canceledByLine.merge(c.getOrderLine().getId(), c.getQuantity(), Integer::sum);
-			refundedTotal += c.getRefundAmount();
-		}
-		return OrderResponse.from(order, canceledByLine, refundedTotal);
+		return OrderResponse.from(order, cancels.findByOrderId(order.getId()));
 	}
 
 	private Order find(Long memberId, Long id) {

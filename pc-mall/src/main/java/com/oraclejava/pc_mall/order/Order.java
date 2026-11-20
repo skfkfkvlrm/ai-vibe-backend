@@ -75,7 +75,7 @@ public class Order {
 	public void addLine(OrderLine line) {
 		lines.add(line);
 		line.setOrder(this);
-		totalPrice += line.getProduct().getPrice() * line.getQuantity();
+		totalPrice += line.getUnitPrice() * line.getQuantity();
 	}
 
 	/** 결제 대기(ORDERED)일 때만 PAID로 바꾼다. 취소된 주문이 되살아나지 않게 한다. */

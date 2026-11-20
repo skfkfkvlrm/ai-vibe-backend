@@ -32,12 +32,18 @@ public class OrderLine {
 	@Column(nullable = false)
 	private int quantity;
 
+	@Column(name = "unit_price")
+	private Integer unitPrice;
+
 	protected OrderLine() {
 	}
 
 	public OrderLine(Product product, int quantity) {
 		this.product = product;
 		this.quantity = quantity;
+		if (product != null) {
+			this.unitPrice = product.getPrice();
+		}
 	}
 
 	void setOrder(Order order) {
@@ -58,5 +64,12 @@ public class OrderLine {
 
 	public int getQuantity() {
 		return quantity;
+	}
+
+	public int getUnitPrice() {
+		if (unitPrice != null) {
+			return unitPrice;
+		}
+		return product != null ? product.getPrice() : 0;
 	}
 }

@@ -1,6 +1,7 @@
 package com.oraclejava.pc_mall.order;
 
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -123,5 +124,50 @@ class OrderCancelApiTests {
 		mvc.perform(post("/api/orders/" + paid.orderId() + "/cancel").header("Authorization", auth)
 				.contentType(MediaType.APPLICATION_JSON).content(cancelBody("   ", paid.lineId(), 1)))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void unitPriceSnapshotPreservedAfterProductPriceChange() throws Exception {
+		String auth = login("qa_cancel05");
+		PaidOrder paid = createPaidOrder(auth, 15000, 2);
+
+		Product product = orders.findById(paid.orderId()).orElseThrow().getLines().get(0).getProduct();
+		product.update(product.getName(), 99000, product.getKind(), product.getText());
+		products.saveAndFlush(product);
+
+		mvc.perform(get("/api/orders/" + paid.orderId()).header("Authorization", auth))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.lines[0].price").value(15000));
+
+		mvc.perform(post("/api/orders/" + paid.orderId() + "/cancel").header("Authorization", auth)
+				.contentType(MediaType.APPLICATION_JSON).content(cancelBody("단가 스냅샷 확인", paid.lineId(), 2)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.refundedTotal").value(30000));
+	}
+
+	@Test
+	void partialCancelBeforePayUpdatesPayableAmountAndKeepsItOnPay() throws Exception {
+		String auth = login("qa_cancel06");
+		Long pid = products.save(new Product("결제전 취소 테스트 상품", 12000, "MOUSE", null)).getId();
+		mvc.perform(post("/api/cart").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON)
+				.content("{\"productId\":" + pid + ",\"quantity\":2}")).andExpect(status().isOk());
+		String body = mvc.perform(post("/api/orders").header("Authorization", auth)
+				.contentType(MediaType.APPLICATION_JSON).content(FORM)).andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		Long orderId = Long.valueOf(body.replaceAll(".*?\"id\":(\\d+).*", "$1"));
+		Long lineId = orders.findById(orderId).orElseThrow().getLines().get(0).getId();
+
+		mvc.perform(post("/api/orders/" + orderId + "/cancel").header("Authorization", auth)
+				.contentType(MediaType.APPLICATION_JSON).content(cancelBody("결제 전 일부 취소", lineId, 1)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.canceledAmount").value(12000))
+				.andExpect(jsonPath("$.payableAmount").value(12000))
+				.andExpect(jsonPath("$.cancels.length()").value(1))
+				.andExpect(jsonPath("$.cancels[0].reason").value("결제 전 일부 취소"));
+
+		mvc.perform(post("/api/orders/" + orderId + "/pay").header("Authorization", auth))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("PAID"))
+				.andExpect(jsonPath("$.payableAmount").value(12000));
 	}
 }
